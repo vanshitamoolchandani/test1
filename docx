@@ -22,3 +22,47 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+
+public class ExportPDFToWord {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(ExportPDFToWord.class);
+
+    public static void main(String[] args) {
+
+        try (InputStream inputStream = Files.newInputStream(new File("src/main/resources/Bodea Brochure.pdf").toPath())) {
+            // Initial setup, create credentials instance
+            Credentials credentials = new ServicePrincipalCredentials(
+                    System.getenv("PDF_SERVICES_CLIENT_ID"),
+                    System.getenv("PDF_SERVICES_CLIENT_SECRET"));
+          
+            // Creates a PDF Services instance
+            PDFServices pdfServices = new PDFServices(credentials);
+          
+            // Creates an asset(s) from source file(s) and upload
+            Asset asset = pdfServices.upload(inputStream, PDFServicesMediaType.PDF.getMediaType());
+          
+            // Create parameters for the job
+            ExportPDFParams exportPDFParams = ExportPDFParams.exportPDFParamsBuilder(ExportPDFTargetFormat.DOCX)
+                    .build();
+          
+            // Creates a new job instance
+            ExportPDFJob exportPDFJob = new ExportPDFJob(asset, exportPDFParams);
+          
+            // Submit the job and gets the job result
+            String location = pdfServices.submit(exportPDFJob);
+            PDFServicesResponse<ExportPDFResult> pdfServicesResponse = pdfServices.getJobResult(location, ExportPDFResult.class);
+          
+            // Get content from the resulting asset(s)
+            Asset resultAsset = pdfServicesResponse.getResult().getAsset();
+            StreamAsset streamAsset = pdfServices.getContent(resultAsset);
+          
+            // Creates an output stream and copy stream asset's content to it
+            Files.createDirectories(Paths.get("output/"));
+            OutputStream outputStream = Files.newOutputStream(new File("output/Bodea Brochure.docx").toPath());
+            LOGGER.info("Saving asset at output/Bodea Brochure.docx");
+            IOUtils.copy(streamAsset.getInputStream(), outputStream);
+        } catch (ServiceApiException | IOException | SDKException | ServiceUsageException e) {
+            LOGGER.error("Exception encountered while executing operation", e);
+        }
+    }
+}
