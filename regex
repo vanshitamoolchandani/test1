@@ -3,3 +3,22 @@ import re
 date_pattern = r'\b(?:\d{1,2}\s(?:January|February|March|April|May|June|July|August|September|October|November|December)\s\d{4})\b'
 
 r"\bVersion(?:\s+\d+(?:\.\d+)?)?:\b"
+
+
+
+age_patterns = [
+                r'(\d+)\s*-\s*(\d+)\s*years?',       # "18-65 years"
+                r'(\d+)\s*to\s*(\d+)\s*years?',     # "18 to 65 years"
+                r'≥\s*(\d+)\s*and\s*≤\s*(\d+)',    # "≥10 and ≤65"
+                r'min\s*(\d+),?\s*max\s*(\d+)',    # "min 18, max 55"
+                r'between\s*(\d+)\s*and\s*(\d+)'   # "between 18 and 60"
+            ]
+
+
+weight_patterns = [
+                r'(\d+)\s*-\s*(\d+)\s*kg',       # "50-100 kg"
+                r'(\d+)\s*to\s*(\d+)\s*kg',     # "50 to 100 kg"
+                r'≥\s*(\d+)\s*kg',              # "≥45 kg"
+                r'≤\s*(\d+)\s*kg',              # "≤80 kg"
+                r'min\s*(\d+),?\s*max\s*(\d+)'  # "min 50kg, max 90kg"
+            ]
