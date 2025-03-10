@@ -1,3 +1,5 @@
 import re
 
 date_pattern = r'\b(?:\d{1,2}\s(?:January|February|March|April|May|June|July|August|September|October|November|December)\s\d{4})\b'
+
+r"\bVersion(?:\s+\d+(?:\.\d+)?)?:\b"
