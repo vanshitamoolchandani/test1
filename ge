@@ -1,0 +1,71 @@
+from docx import Document
+import re
+
+def AgeExtractor(file_path):
+    target_heading = "Inclusion Criteria"
+    age_keywords = ["Age", "age"]  # Keywords to look for under "Inclusion Criteria"
+    age_patterns = [
+        r"(\d+)\s*-\s*(\d+)\s*years",               # e.g., "18 - 65 years"
+        r"between\s+(\d+)\s+and\s+(\d+)\s+years",   # e.g., "between 18 and 65 years"
+        r"≥\s*(\d+)\s*years?",                      # e.g., "≥ 18 years"
+        r"≤\s*(\d+)\s*years?",                      # e.g., "≤ 65 years"
+        r"greater\s+than\s+(\d+)\s*years?",         # e.g., "greater than 18 years"
+        r"less\s+than\s+(\d+)\s*years?",            # e.g., "less than 65 years"
+        r"more\s+than\s+(\d+)\s*years?",            # e.g., "more than 18 years"
+        r"less\s+or\s+equal\s+to\s+(\d+)\s*years?", # e.g., "less or equal to 65 years"
+        r"more\s+or\s+equal\s+to\s+(\d+)\s*years?", # e.g., "more or equal to 18 years"
+        r">=\s*(\d+)",                              # e.g., ">= 18"
+        r"<=\s*(\d+)",                              # e.g., "<= 65"
+        r">\s*(\d+)",                               # e.g., "> 18"
+        r"<\s*(\d+)"                                # e.g., "< 65"
+    ]
+
+    doc = Document(file_path)
+    found_section = False  # Flag to check if we are under "Inclusion Criteria"
+    extracted_ages = []  # Store matched age criteria
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        print(f"DEBUG: Checking Paragraph -> {repr(text)}")  # Debug print
+
+        # Step 1: Detect "Inclusion Criteria" section
+        if text.lower() == target_heading.lower():
+            found_section = True
+            print(f"DEBUG: Found Section -> {repr(text)}")  # Debug print
+            continue
+
+        if found_section:
+            # Step 2: Check if paragraph contains age-related keywords
+            if any(keyword in text for keyword in age_keywords):
+                print(f"DEBUG: Found Age Keyword -> {repr(text)}")  # Debug print
+
+                # Step 3: Extract age information using regex
+                for pattern in age_patterns:
+                    match = re.search(pattern, text, re.IGNORECASE)
+                    if match:
+                        extracted_age = " - ".join(match.groups()) if len(match.groups()) > 1 else match.group(1)
+                        print(f"DEBUG: Extracted Age -> {repr(extracted_age)}")  # Debug print
+                        extracted_ages.append(extracted_age)
+
+    # Step 4: Check tables under "Inclusion Criteria" for age
+    if found_section:
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    cell_text = cell.text.strip()
+                    print(f"DEBUG: Checking Table Cell -> {repr(cell_text)}")  # Debug print
+
+                    if any(keyword in cell_text for keyword in age_keywords):
+                        for pattern in age_patterns:
+                            match = re.search(pattern, cell_text, re.IGNORECASE)
+                            if match:
+                                extracted_age = " - ".join(match.groups()) if len(match.groups()) > 1 else match.group(1)
+                                print(f"DEBUG: Extracted Age in Table -> {repr(extracted_age)}")  # Debug print
+                                extracted_ages.append(extracted_age)
+
+    if extracted_ages:
+        print(f"DEBUG: Extracted Ages -> {repr(extracted_ages)}")  # Debug final output
+        return extracted_ages
+
+    print("DEBUG: No age criteria found")
+    return ["Age criteria not found"]
