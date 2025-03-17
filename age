@@ -1,73 +1,44 @@
-import spacy
-import re
 from docx import Document
+import re
 
-# Load spaCy NER model
-nlp = spacy.load("en_core_web_sm")
-
-def age_extractor_with_ner(file_path):
+def count_bullets_in_sections(file_path):
     inclusion_heading = "Inclusion Criteria"
     exclusion_heading = "Exclusion Criteria"
     
-    age_patterns = [
-        r"(\d+)\s*-\s*(\d+)\s*years?",  # "18 - 65 years"
-        r"(\d+)\s*to\s*(\d+)\s*years?\s*of\s*age",  # "18 to 65 years of age"
-        r"≥\s*(\d+)\s*years?",  # "≥ 18 years"
-        r"≤\s*(\d+)\s*years?",  # "≤ 65 years"
-        r"at least (\d+) years? of age",  # "at least 12 years of age"
-        r"no older than (\d+) years?"  # "no older than 80 years"
-    ]
-
     doc = Document(file_path)
-    found_section = False
-    min_age = None
-    max_age = None
+    found_inclusion = False
+    found_exclusion = False
+    inclusion_bullet_count = 0
+    exclusion_bullet_count = 0
 
-    full_text = "\n".join([para.text.strip() for para in doc.paragraphs if para.text.strip()])
+    bullet_pattern = re.compile(r"^(\s*[-•*]\s+|\s*\d+\.\s+)")  # Matches "-", "•", "*", or "1.", "2.", etc.
 
-    for match in re.finditer(r"|".join(age_patterns), full_text, re.IGNORECASE):
-        age_match = match.group()
-        start_idx, end_idx = match.start(), match.end()
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if not text:
+            continue  # Skip empty paragraphs
 
-        print(f"DEBUG: Found Age Mention -> {repr(age_match)} at index {start_idx}-{end_idx}")
+        if text.lower().startswith(inclusion_heading.lower()):
+            found_inclusion = True
+            continue
 
-        # Check for 'screening' or 'consent' within ±50 characters
-        surrounding_text = full_text[max(0, start_idx - 50): min(len(full_text), end_idx + 50)]
-        if re.search(r"\b(screening|consent)\b", surrounding_text, re.IGNORECASE):
-            print(f"DEBUG: Found 'screening' or 'consent' near age mention -> {repr(surrounding_text)}")
+        if text.lower().startswith(exclusion_heading.lower()):
+            found_exclusion = True
+            found_inclusion = False  # Stop counting inclusion bullets
+            continue
 
-        # Extract numeric values from matched text
-        match_groups = re.search(r"(\d+)", age_match)
-        if match_groups:
-            age_value = int(match_groups.group(1))
-            if "at least" in age_match or "≥" in age_match:
-                if min_age is None:
-                    min_age = age_value
-                    print(f"DEBUG: Updated min_age -> {repr(min_age)}")
-            elif "no older than" in age_match or "≤" in age_match:
-                if max_age is None:
-                    max_age = age_value
-                    print(f"DEBUG: Updated max_age -> {repr(max_age)}")
+        if found_inclusion and bullet_pattern.match(text):
+            inclusion_bullet_count += 1
 
-    age_data = {"min": min_age, "max": max_age}
-    print(f"DEBUG: Extracted Age Data -> {repr(age_data)}")
-    return age_data
+        if found_exclusion and bullet_pattern.match(text):
+            exclusion_bullet_count += 1
+
+    return {
+        "Inclusion Criteria Bullets": inclusion_bullet_count,
+        "Exclusion Criteria Bullets": exclusion_bullet_count
+    }
 
 # Provide the file path for extraction (replace with actual file path)
 file_path = "your_file.docx"
-age_extractor_with_ner(file_path)
-
-
-
-age_numbers = re.findall(r"(\d+)", age_match)
-        if age_numbers:
-            age_numbers = list(map(int, age_numbers))
-            if len(age_numbers) == 2:
-                min_age, max_age = age_numbers
-                print(f"DEBUG: Updated min_age -> {min_age}, max_age -> {max_age}")
-            elif "at least" in age_match or "≥" in age_match:
-                min_age = age_numbers[0]
-                print(f"DEBUG: Updated min_age -> {min_age}")
-            elif "no older than" in age_match or "≤" in age_match:
-                max_age = age_numbers[0]
-                print(f"DEBUG: Updated max_age -> {max_age}")
+bullet_counts = count_bullets_in_sections(file_path)
+print(bullet_counts)
