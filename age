@@ -2,27 +2,28 @@ from docx import Document
 import re
 
 def count_bullets_in_sections(file_path):
-    inclusion_heading = "Inclusion Criteria"
-    exclusion_heading = "Exclusion Criteria"
-    
+    inclusion_pattern = re.compile(r"^\s*\d*\.*\d*\s*Inclusion Criteria", re.IGNORECASE)
+    exclusion_pattern = re.compile(r"^\s*\d*\.*\d*\s*Exclusion Criteria", re.IGNORECASE)
+    bullet_pattern = re.compile(r"^\s*([-•*]|\d+\.)\s+")  # Matches "-", "•", "*", "1.", "2.", etc.
+
     doc = Document(file_path)
+    
     found_inclusion = False
     found_exclusion = False
     inclusion_bullet_count = 0
     exclusion_bullet_count = 0
-
-    bullet_pattern = re.compile(r"^(\s*[-•*]\s+|\s*\d+\.\s+)")  # Matches "-", "•", "*", or "1.", "2.", etc.
 
     for para in doc.paragraphs:
         text = para.text.strip()
         if not text:
             continue  # Skip empty paragraphs
 
-        if text.lower().startswith(inclusion_heading.lower()):
+        if inclusion_pattern.match(text):
             found_inclusion = True
+            found_exclusion = False  # Reset exclusion flag
             continue
 
-        if text.lower().startswith(exclusion_heading.lower()):
+        if exclusion_pattern.match(text):
             found_exclusion = True
             found_inclusion = False  # Stop counting inclusion bullets
             continue
@@ -38,7 +39,7 @@ def count_bullets_in_sections(file_path):
         "Exclusion Criteria Bullets": exclusion_bullet_count
     }
 
-# Provide the file path for extraction (replace with actual file path)
+# Provide the file path for extraction
 file_path = "your_file.docx"
 bullet_counts = count_bullets_in_sections(file_path)
 print(bullet_counts)
