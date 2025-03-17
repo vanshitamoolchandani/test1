@@ -1,99 +1,75 @@
-import re
-import spacy
-
-# Load spaCy's English model
-nlp = spacy.load("en_core_web_sm")
-
-def valid_context(context_text):
-    """
-    Returns True if the context is valid:
-    - Must include the word 'screening'
-    - Must NOT include excluded keywords like 'weight', 'bmi', or 'body'
-    """
-    context_doc = nlp(context_text)
-    tokens = [token.text.lower() for token in context_doc]
-    excluded_keywords = ['weight', 'bmi', 'body']
+# def ageExtractor(file_path):
+#     inclusion_heading = "Inclusion Criteria"
+#     exclusion_heading = "Exclusion Criteria"
     
-    is_valid = ('screening' in tokens) and (not any(word in tokens for word in excluded_keywords))
-    print(f"\n[DEBUG] Context Validation:\nContext: {context_text}\nValid: {is_valid}")
-    return is_valid
+#     age_patterns = [
+#         r"(\d+)\s*-\s*(\d+)\s*years?",                # "18 - 65 years"
+#         r"(\d+)\s*to\s*(\d+)\s*years?\s*of\s*age",    # "18 to 65 years of age"
+#         r"between\s+(\d+)\s+and\s+(\d+)\s*years?",    # "between 18 and 65 years"
+#         r"≥\s*(\d+)\s*years?",                        # "≥ 18 years"
+#         r"≤\s*(\d+)\s*years?",                        # "≤ 65 years"
+#         r">=\s*(\d+)\s*years?",                       # ">= 18 years"
+#         r"<=\s*(\d+)\s*years?",                       # "<= 65 years"
+#         r">\s*(\d+)\s*years?",                        # "> 18 years"
+#         r"<\s*(\d+)\s*years?",                        # "< 65 years"
+#         r"greater\s+than\s+(\d+)\s*years?",           # "greater than 18 years"
+#         r"less\s+than\s+(\d+)\s*years?",              # "less than 65 years"
+#         r"more\s+than\s+(\d+)\s*years?",              # "more than 18 years"
+#         r"less\s+or\s+equal\s+to\s+(\d+)\s*years?",   # "less or equal to 65 years"
+#         r"more\s+or\s+equal\s+to\s+(\d+)\s*years?",   # "more or equal to 18 years"
+#         r"at least (\d+) years? of age",              # "at least 12 years of age"
+#         r"no older than (\d+) years?"                 # "no older than 80 years"
+#     ]
 
-def extract_age_from_text(text):
-    """
-    Extracts min and max age from the given text using regex patterns
-    and verifies context with spaCy.
-    """
-    min_age = None
-    max_age = None
 
-    # Define regex patterns for different age expressions
-    age_patterns = [
-        r'(\d+)\s*-\s*(\d+)\s*years?',       # "18-65 years"
-        r'(\d+)\s*to\s*(\d+)\s*years?',      # "18 to 65 years"
-        r'≥\s*(\d+)\s*and\s*≤\s*(\d+)',      # "≥10 and ≤65"
-        r'min\s*(\d+),?\s*max\s*(\d+)',      # "min 18, max 55"
-        r'between\s*(\d+)\s*and\s*(\d+)'     # "between 18 and 60"
-    ]
+#     doc = Document(file_path)
+#     found_section = False  
+#     min_age = None
+#     max_age = None
 
-    print("\n[DEBUG] Extracting Age...")
+#     for para in doc.paragraphs:
+#         text = para.text.strip()
+#         #print(f"DEBUG: Checking Paragraph -> {repr(text)}")  
 
-    for pattern in age_patterns:
-        for match in re.finditer(pattern, text, re.IGNORECASE):
-            context_window = text[max(0, match.start()-50): match.end()+50]
-            print(f"\n[DEBUG] Found match: {match.group(0)} in context:\n{context_window}")
+#         if text.lower().startswith(inclusion_heading.lower()):
+#             found_section = True
+#             print(f"DEBUG: Found Section -> {repr(text)}")  
+#             continue
+
+#         if found_section and text.lower().startswith(exclusion_heading.lower()):
+#             print(f"DEBUG: Found exclusion criteria {repr(text)}")
+#             break
+
+#         if found_section:
             
-            if valid_context(context_window):
-                candidate_min = int(match.group(1))
-                candidate_max = int(match.group(2))
-                if min_age is None or candidate_min < min_age:
-                    min_age = candidate_min
-                if max_age is None or candidate_max > max_age:
-                    max_age = candidate_max
+#             for pattern in age_patterns:
+#                 match = re.search(pattern, text, re.IGNORECASE)
+#                 # print(f"DEBUG: searching match -> {repr(text)}")
 
-    # Handle cases where only a minimum age is specified
-    single_min_pattern = re.compile(r'≥\s*(\d+)\s*years?', re.IGNORECASE)
-    for match in single_min_pattern.finditer(text):
-        context_window = text[max(0, match.start()-50): match.end()+50]
-        print(f"\n[DEBUG] Found single min age match: {match.group(0)} in context:\n{context_window}")
-        
-        if valid_context(context_window):
-            candidate_min = int(match.group(1))
-            if min_age is None or candidate_min < min_age:
-                min_age = candidate_min
-
-    print(f"\n[DEBUG] Final Extracted Ages - Min: {min_age}, Max: {max_age}")
-    return {"Min age": min_age, "Max age": max_age}
-
-def AgeExtractor(file_path):
-    """
-    Reads the document, extracts the Inclusion criteria
-    section, and then returns the extracted min and max age.
-    """
-    print("\n[DEBUG] Reading file:", file_path)
-
-    encodings = ["utf-8", "ISO-8859-1", "utf-16"]
-    
-    for encoding in encodings:
-        try:
-            with open(file_path, 'r', encoding=encoding) as file:
-                raw_text = file.read()
-            break  # Exit loop if reading succeeds
-        except UnicodeDecodeError:
-            continue  # Try the next encoding
-
-    else:
-        raise ValueError(f"Failed to decode file: {file_path}")
+#                 if match:
 
 
-    # Extract text under "Inclusion criteria" up to "Exclusion criteria" or the end of file.
-    inclusion_match = re.search(r'(?<=Inclusion criteria)(.*?)(?=Exclusion criteria|$)', 
-                                  raw_text, re.DOTALL | re.IGNORECASE)
+#                     if len(match.groups()) > 1:
+#                         if min_age is None:
+#                             min_age = int(match.group(1))
+#                             print(f"DEBUG: min_age -> {repr(min_age)}")
+#                         if max_age is None:
+#                             max_age = int(match.group(2))
+#                             print(f"DEBUG: min_age -> {repr(max_age)}")
+                            
+#                     else:
+#                         age_value = int(match.group(1))
+#                         if "at least" in pattern or ">" in pattern or "more" in pattern or "≥" in pattern:
+#                             if min_age is None:
+#                                 min_age = age_value
+#                                 print(f"DEBUG: updated min_age -> {repr(min_age)}") 
+#                         elif "no older than" in pattern or "<" in pattern or "less" in pattern or "≤" in pattern:
+#                                 if max_age is None:
+#                                     max_age = age_value
+#                                     print(f"DEBUG: updated max_age -> {repr(max_age)}")
 
-    if not inclusion_match:
-        print("\n[DEBUG] No Inclusion Criteria section found.")
-        return {"Min age": None, "Max age": None}
 
-    inclusion_text = inclusion_match.group(0)
-    print("\n[DEBUG] Extracted Inclusion Criteria Text:\n", inclusion_text[:1000])  # Print first 1000 characters
+#     age_data = {"min": min_age, "max": max_age}
+#     print(f"DEBUG: Extracted Age Data -> {repr(age_data)}")  
+#     return age_data
 
-    return extract_age_from_text(inclusion_text)
