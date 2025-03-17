@@ -1,55 +1,32 @@
-import re
-import fitz  # PyMuPDF
-import dateutil.parser
-
-def extract_latest_amendment_date(file_path):
+def extract_latest_amendment_date(doc_path):
+    doc = Document(doc_path)
     latest_amendment = {"amendment": None, "date": None}
-    found_protocol_summary = False
 
-    with fitz.open(file_path) as doc:
-        for page in doc:
-            text = page.get_text("text")  # Extract raw text
+    for table in doc.tables:
+        for row in table.rows:
+            row_text = [cell.text.strip() for cell in row.cells]
 
-            # Check if "PROTOCOL SUMMARY" is found
-            if "PROTOCOL SUMMARY" in text:
-                found_protocol_summary = True
+            # Check if any cell contains "Amendment X" (where X is a number)
+            amendment_match = re.search(r"Amendment\s*(\d+)", " | ".join(row_text), re.IGNORECASE)
+            if amendment_match:
+                amendment_number = int(amendment_match.group(1))
 
-            if found_protocol_summary:
-                # Extract amendment numbers and dates using regex
-                amendment_matches = re.findall(r"Amendment\s*(\d+)", text, re.IGNORECASE)
-                date_matches = re.findall(r"(\d{1,2}\s+\w+\s+\d{4}|\d{1,2}/\d{1,2}/\d{4}|\d{4}-\d{2}-\d{2})", text)
-
-                amendments = [int(num) for num in amendment_matches]  # Convert amendment numbers to integers
+                # Look for a date in the same row (in any column)
+                date_matches = [parser.parse(cell, fuzzy=True) for cell in row_text if re.search(r"\d{1,2}[\s/-]\w+[\s/-]\d{2,4}", cell)]
                 
-                # Process amendment-date pairs
-                for i in range(len(amendments)):
-                    if i < len(date_matches):  # Ensure we don't go out of range
-                        try:
-                            parsed_date = dateutil.parser.parse(date_matches[i], fuzzy=True)
+                if date_matches:
+                    amendment_date = max(date_matches)  # Pick the latest date if multiple are found
 
-                            # Update latest amendment if:
-                            # - It's the highest amendment number
-                            # - Or same amendment number but newer date
-                            if (latest_amendment["amendment"] is None or 
-                                amendments[i] > latest_amendment["amendment"] or
-                                (amendments[i] == latest_amendment["amendment"] and parsed_date > latest_amendment["date"])):
-                                
-                                latest_amendment["amendment"] = amendments[i]
-                                latest_amendment["date"] = parsed_date
-
-                        except Exception:
-                            continue  # Skip if date parsing fails
-
-                # Stop searching after "PROTOCOL SUMMARY"
-                break  
+                    # Update the latest amendment
+                    if (latest_amendment["amendment"] is None or 
+                        amendment_number > latest_amendment["amendment"] or 
+                        (amendment_number == latest_amendment["amendment"] and amendment_date > latest_amendment["date"])):
+                        
+                        latest_amendment["amendment"] = amendment_number
+                        latest_amendment["date"] = amendment_date
 
     # Format the extracted date
     if latest_amendment["date"]:
         latest_amendment["date"] = latest_amendment["date"].strftime("%d %B %Y")
 
     return latest_amendment
-
-# Example usage
-file_path = "sample_protocol.pdf"
-result = extract_latest_amendment_date(file_path)
-print("Latest Amendment:", result)
