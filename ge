@@ -1,32 +1,25 @@
-def extract_latest_amendment_date(doc_path):
-    doc = Document(doc_path)
-    latest_amendment = {"amendment": None, "date": None}
+def AgeExtractor_NER(file_path):
+    nlp = spacy.load("en_core_web_sm")  # Load English NLP model
+    with open(file_path, 'r', encoding='utf-8') as file:
+        text = file.read()
 
-    for table in doc.tables:
-        for row in table.rows:
-            row_text = [cell.text.strip() for cell in row.cells]
+    # Extract content under 'Inclusion criteria'
+    inclusion_criteria_match = re.search(r'(?<=Inclusion criteria)(.*?)(?=Exclusion criteria|\Z)', text, re.DOTALL | re.IGNORECASE)
+    if not inclusion_criteria_match:
+        return None, None
+    inclusion_text = inclusion_criteria_match.group(0)
 
-            # Check if any cell contains "Amendment X" (where X is a number)
-            amendment_match = re.search(r"Amendment\s*(\d+)", " | ".join(row_text), re.IGNORECASE)
-            if amendment_match:
-                amendment_number = int(amendment_match.group(1))
+    # Process text with spaCy
+    doc = nlp(inclusion_text)
+    
+    ages = [int(ent.text) for ent in doc.ents if ent.label_ == "AGE"]
+    
+    if not ages:
+        return None, None
+    
+    return min(ages, default=None), max(ages, default=None)
 
-                # Look for a date in the same row (in any column)
-                date_matches = [parser.parse(cell, fuzzy=True) for cell in row_text if re.search(r"\d{1,2}[\s/-]\w+[\s/-]\d{2,4}", cell)]
-                
-                if date_matches:
-                    amendment_date = max(date_matches)  # Pick the latest date if multiple are found
-
-                    # Update the latest amendment
-                    if (latest_amendment["amendment"] is None or 
-                        amendment_number > latest_amendment["amendment"] or 
-                        (amendment_number == latest_amendment["amendment"] and amendment_date > latest_amendment["date"])):
-                        
-                        latest_amendment["amendment"] = amendment_number
-                        latest_amendment["date"] = amendment_date
-
-    # Format the extracted date
-    if latest_amendment["date"]:
-        latest_amendment["date"] = latest_amendment["date"].strftime("%d %B %Y")
-
-    return latest_amendment
+# Example usage
+file_path = "protocol.txt"
+min_age, max_age = AgeExtractor_NER(file_path)
+print(f"Min Age: {min_age}, Max Age: {max_age}")
