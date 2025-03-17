@@ -1,24 +1,88 @@
 import re
+import spacy
 
-date_pattern = r'\b(?:\d{1,2}\s(?:January|February|March|April|May|June|July|August|September|October|November|December)\s\d{4})\b'
+# Load spaCy's English model (adjust as needed)
+nlp = spacy.load("en_core_web_sm")
 
-r"\bVersion(?:\s+\d+(?:\.\d+)?)?:\b"
+def preprocess_text(text):
+    """
+    Preprocess the text to remove table-like structures and extra metadata.
+    This simple example removes lines that seem to be part of tables.
+    """
+    # Remove lines that look like table rows (e.g., lines with multiple '|' characters)
+    cleaned_lines = []
+    for line in text.splitlines():
+        if line.count('|') < 2:  # adjust the threshold as needed
+            cleaned_lines.append(line)
+    cleaned_text = "\n".join(cleaned_lines)
+    # Remove extra whitespace
+    cleaned_text = re.sub(r'\s+', ' ', cleaned_text)
+    return cleaned_text
 
+def extract_age_from_text(text):
+    """
+    Extract min and max age using regex and spaCy NER filtering.
+    Only considers age mentions in a context related to screening.
+    """
+    min_age, max_age = None, None
 
+    # Use regex to find patterns like "18 to 65 years" or "≥ 12 years"
+    age_range_pattern = re.compile(r'\b(\d{1,3})\s*(?:to|-)\s*(\d{1,3})\s*years?', re.IGNORECASE)
+    min_age_pattern = re.compile(r'[≥>]\s*(\d{1,3})\s*years?', re.IGNORECASE)
+    max_age_pattern = re.compile(r'[≤<]\s*(\d{1,3})\s*years?', re.IGNORECASE)
 
-age_patterns = [
-                r'(\d+)\s*-\s*(\d+)\s*years?',       # "18-65 years"
-                r'(\d+)\s*to\s*(\d+)\s*years?',     # "18 to 65 years"
-                r'≥\s*(\d+)\s*and\s*≤\s*(\d+)',    # "≥10 and ≤65"
-                r'min\s*(\d+),?\s*max\s*(\d+)',    # "min 18, max 55"
-                r'between\s*(\d+)\s*and\s*(\d+)'   # "between 18 and 60"
-            ]
+    # First, try to capture an age range
+    range_match = age_range_pattern.search(text)
+    if range_match:
+        candidate_min = int(range_match.group(1))
+        candidate_max = int(range_match.group(2))
+        # Use spaCy to check context: make sure nearby words include 'screening' and not weight/BMI etc.
+        context_span = text[max(0, range_match.start()-50):range_match.end()+50]
+        context_doc = nlp(context_span)
+        context_tokens = [token.text.lower() for token in context_doc]
+        if 'screening' in context_tokens and not any(x in context_tokens for x in ['weight', 'bmi', 'body']):
+            min_age, max_age = candidate_min, candidate_max
 
+    # If no range is found or range is filtered out, search for isolated min age
+    if min_age is None:
+        for match in min_age_pattern.finditer(text):
+            candidate_min = int(match.group(1))
+            context_span = text[max(0, match.start()-50):match.end()+50]
+            context_doc = nlp(context_span)
+            context_tokens = [token.text.lower() for token in context_doc]
+            if 'screening' in context_tokens and not any(x in context_tokens for x in ['weight', 'bmi', 'body']):
+                min_age = candidate_min
+                break
 
-weight_patterns = [
-                r'(\d+)\s*-\s*(\d+)\s*kg',       # "50-100 kg"
-                r'(\d+)\s*to\s*(\d+)\s*kg',     # "50 to 100 kg"
-                r'≥\s*(\d+)\s*kg',              # "≥45 kg"
-                r'≤\s*(\d+)\s*kg',              # "≤80 kg"
-                r'min\s*(\d+),?\s*max\s*(\d+)'  # "min 50kg, max 90kg"
-            ]
+    # Search for isolated max age (if required)
+    if max_age is None:
+        for match in max_age_pattern.finditer(text):
+            candidate_max = int(match.group(1))
+            context_span = text[max(0, match.start()-50):match.end()+50]
+            context_doc = nlp(context_span)
+            context_tokens = [token.text.lower() for token in context_doc]
+            if 'screening' in context_tokens and not any(x in context_tokens for x in ['weight', 'bmi', 'body']):
+                max_age = candidate_max
+                break
+
+    return min_age, max_age
+
+def AgeExtractor(file_path):
+    # Read and preprocess the document
+    with open(file_path, 'r', encoding='utf-8') as file:
+        raw_text = file.read()
+    processed_text = preprocess_text(raw_text)
+    
+    # Extract the Inclusion criteria section
+    inclusion_match = re.search(r'(?<=Inclusion criteria)(.*?)(?=Exclusion criteria|$)', processed_text, re.DOTALL | re.IGNORECASE)
+    if not inclusion_match:
+        return None, None
+    inclusion_text = inclusion_match.group(0)
+
+    # Extract age data from the inclusion text
+    return extract_age_from_text(inclusion_text)
+
+# Example usage
+file_path = "protocol.txt"
+min_age, max_age = AgeExtractor(file_path)
+print(f"Min Age: {min_age}, Max Age: {max_age}")
