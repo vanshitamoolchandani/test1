@@ -13,8 +13,10 @@ def preprocess_text(text):
         # Remove lines that appear to be table rows (e.g., lines with many "|" characters)
         if line.count('|') < 2:
             cleaned_lines.append(line)
+    
     cleaned_text = "\n".join(cleaned_lines)
     cleaned_text = re.sub(r'\s+', ' ', cleaned_text)
+    print("\n[DEBUG] Preprocessed Text:\n", cleaned_text[:1000])  # Print first 1000 characters for debugging
     return cleaned_text
 
 def valid_context(context_text):
@@ -26,7 +28,10 @@ def valid_context(context_text):
     context_doc = nlp(context_text)
     tokens = [token.text.lower() for token in context_doc]
     excluded_keywords = ['weight', 'bmi', 'body']
-    return ('screening' in tokens) and (not any(word in tokens for word in excluded_keywords))
+    
+    is_valid = ('screening' in tokens) and (not any(word in tokens for word in excluded_keywords))
+    print(f"\n[DEBUG] Context Validation:\nContext: {context_text}\nValid: {is_valid}")
+    return is_valid
 
 def extract_age_from_text(text):
     """
@@ -45,9 +50,13 @@ def extract_age_from_text(text):
         r'between\s*(\d+)\s*and\s*(\d+)'     # "between 18 and 60"
     ]
 
+    print("\n[DEBUG] Extracting Age...")
+
     for pattern in age_patterns:
         for match in re.finditer(pattern, text, re.IGNORECASE):
             context_window = text[max(0, match.start()-50): match.end()+50]
+            print(f"\n[DEBUG] Found match: {match.group(0)} in context:\n{context_window}")
+            
             if valid_context(context_window):
                 candidate_min = int(match.group(1))
                 candidate_max = int(match.group(2))
@@ -57,15 +66,17 @@ def extract_age_from_text(text):
                     max_age = candidate_max
 
     # Handle cases where only a minimum age is specified
-    if min_age is not None and max_age is None:
-        single_min_pattern = re.compile(r'≥\s*(\d+)\s*years?', re.IGNORECASE)
-        for match in single_min_pattern.finditer(text):
-            context_window = text[max(0, match.start()-50): match.end()+50]
-            if valid_context(context_window):
-                candidate_min = int(match.group(1))
-                if min_age is None or candidate_min < min_age:
-                    min_age = candidate_min
+    single_min_pattern = re.compile(r'≥\s*(\d+)\s*years?', re.IGNORECASE)
+    for match in single_min_pattern.finditer(text):
+        context_window = text[max(0, match.start()-50): match.end()+50]
+        print(f"\n[DEBUG] Found single min age match: {match.group(0)} in context:\n{context_window}")
+        
+        if valid_context(context_window):
+            candidate_min = int(match.group(1))
+            if min_age is None or candidate_min < min_age:
+                min_age = candidate_min
 
+    print(f"\n[DEBUG] Final Extracted Ages - Min: {min_age}, Max: {max_age}")
     return {"Min age": min_age, "Max age": max_age}
 
 def AgeExtractor(file_path):
@@ -73,15 +84,22 @@ def AgeExtractor(file_path):
     Reads the document, preprocesses the text, extracts the Inclusion criteria
     section, and then returns the extracted min and max age.
     """
+    print("\n[DEBUG] Reading file:", file_path)
+
     with open(file_path, 'r', encoding='utf-8') as file:
         raw_text = file.read()
 
     processed_text = preprocess_text(raw_text)
+
     # Extract text under "Inclusion criteria" up to "Exclusion criteria" or the end of file.
     inclusion_match = re.search(r'(?<=Inclusion criteria)(.*?)(?=Exclusion criteria|$)', 
                                   processed_text, re.DOTALL | re.IGNORECASE)
+
     if not inclusion_match:
+        print("\n[DEBUG] No Inclusion Criteria section found.")
         return {"Min age": None, "Max age": None}
 
     inclusion_text = inclusion_match.group(0)
+    print("\n[DEBUG] Extracted Inclusion Criteria Text:\n", inclusion_text[:1000])  # Print first 1000 characters
+
     return extract_age_from_text(inclusion_text)
