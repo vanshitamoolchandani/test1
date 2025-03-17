@@ -56,3 +56,18 @@ def age_extractor_with_ner(file_path):
 # Provide the file path for extraction (replace with actual file path)
 file_path = "your_file.docx"
 age_extractor_with_ner(file_path)
+
+
+
+age_numbers = re.findall(r"(\d+)", age_match)
+        if age_numbers:
+            age_numbers = list(map(int, age_numbers))
+            if len(age_numbers) == 2:
+                min_age, max_age = age_numbers
+                print(f"DEBUG: Updated min_age -> {min_age}, max_age -> {max_age}")
+            elif "at least" in age_match or "≥" in age_match:
+                min_age = age_numbers[0]
+                print(f"DEBUG: Updated min_age -> {min_age}")
+            elif "no older than" in age_match or "≤" in age_match:
+                max_age = age_numbers[0]
+                print(f"DEBUG: Updated max_age -> {max_age}")
