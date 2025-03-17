@@ -1,5 +1,6 @@
-from docx import Document
-import re
+    bullet_pattern = re.compile(r"^\s*\d+(\.\d+)*\s*[\)\.]*")  # Matches "1.", "2.", "5.1", "a)", etc.
+
+
 
 def count_bullets_in_sections(file_path):
     inclusion_pattern = re.compile(r"^\s*\d*\.*\d*\s*Inclusion Criteria", re.IGNORECASE)
