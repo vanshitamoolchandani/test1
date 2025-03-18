@@ -1,72 +1,59 @@
+import re
+from docx import Document
+
 def ageExtractor(file_path):
     inclusion_heading = "Inclusion Criteria"
     exclusion_heading = "Exclusion Criteria"
     
     age_patterns = [
-        r"(\d+)\s*-\s*(\d+)\s*years?",  # "18 - 65 years"
-        r"(\d+)\s*to\s*(\d+)\s*years?\s*of\s*age",  # "18 to 65 years of age"
-        r"≥\s*(\d+)\s*years?",  # "≥ 18 years"
-        r"≤\s*(\d+)\s*years?",  # "≤ 65 years"
-        r"at least (\d+) years? of age",  # "at least 12 years of age"
-        r"no older than (\d+) years?"  # "no older than 80 years"
+        r"(\d+)\s*-\s*(\d+)\s*years?",          # Matches "18 - 65 years"
+        r"(\d+)\s*to\s*(\d+)\s*years?\s*of\s*age",  # Matches "18 to 65 years of age"
+        r"≥\s*(\d+)\s*years?",                  # Matches "≥ 18 years"
+        r"≤\s*(\d+)\s*years?",                  # Matches "≤ 65 years"
+        r"at least (\d+) years? of age",        # Matches "at least 12 years of age"
+        r"no older than (\d+) years?"           # Matches "no older than 80 years"
     ]
 
     doc = Document(file_path)
-    found_section = False  
-    min_age = None
-    max_age = None
+    found_section = False
     inclusion_text = ""
+    age_lines = set()  # Store unique lines with age mentions
 
+    # Extract text from the Inclusion Criteria section
     for para in doc.paragraphs:
         text = para.text.strip()
-        #print(f"DEBUG: Checking Paragraph -> {repr(text)}")  
-
+        
         if text.lower().startswith(inclusion_heading.lower()):
             found_section = True
-            # print(f"DEBUG: Found Section -> {repr(text)}")  
-            continue
-
+            continue  # Skip the heading itself
+        
         if found_section and text.lower().startswith(exclusion_heading.lower()):
-            # print(f"DEBUG: Found exclusion criteria {repr(text)}")
-            break
-
+            break  # Stop at Exclusion Criteria
+        
         if found_section:
-            inclusion_text += text + "\n" 
-    
-    
+            inclusion_text += text + "\n"  # Preserve paragraph boundaries
 
+    # Process the inclusion text to find age mentions and their lines
+    for match in re.finditer(r"|".join(age_patterns), inclusion_text, re.IGNORECASE):
+        start_idx, end_idx = match.start(), match.end()
+        age_mention = match.group()
+        
+        # Check for nearby "screening" or "consent" (±10 characters)
+        surrounding = inclusion_text[max(0, start_idx-10) : min(len(inclusion_text), end_idx+10)]
+        if re.search(r"\b(screening|consent)\b", surrounding, re.IGNORECASE):
+            continue  # Skip this match
+        
+        # Extract the entire line (paragraph) where the age mention occurs
+        line_start = inclusion_text.rfind('\n', 0, start_idx) + 1
+        line_end = inclusion_text.find('\n', start_idx)
+        if line_end == -1:
+            line_end = len(inclusion_text)
+        full_line = inclusion_text[line_start:line_end].strip()
+        
+        age_lines.add(full_line)  # Deduplicate using a set
 
+    return list(age_lines)  # Return list of unique lines
 
-            for match in re.finditer(r"|".join(age_patterns), inclusion_text, re.IGNORECASE):
-                age_match = match.group()
-                start_idx, end_idx = match.start(), match.end()
-
-                # print(f"DEBUG: Found Age Mention -> {repr(age_match)} at index {start_idx}-{end_idx}")
-
-                # Check for 'screening' or 'consent' within ±50 characters
-                surrounding_text = inclusion_text[max(0, start_idx - 10): min(len(inclusion_text), end_idx + 10)]
-                if re.search(r"\b(screening|consent)\b", surrounding_text, re.IGNORECASE):
-                    # print(f"DEBUG: Found 'screening' or 'consent' near age mention -> {repr(surrounding_text)}")
-
-                # Extract numeric values from matched text
-                age_numbers = re.findall(r"(\d+)", age_match)
-                if age_numbers:
-                    age_numbers = list(map(int, age_numbers))
-                    if len(age_numbers) == 2:
-                        min_age, max_age = age_numbers
-                        # print(f"DEBUG: Updated min_age -> {min_age}, max_age -> {max_age}")
-                    elif "at least" in age_match or "≥" in age_match:
-                        min_age = age_numbers[0]
-                        # print(f"DEBUG: Updated min_age -> {min_age}")
-                    elif "no older than" in age_match or "≤" in age_match:
-                        max_age = age_numbers[0]
-                        # print(f"DEBUG: Updated max_age -> {max_age}")
-
-        if not inclusion_text:
-            # print("Error: IC not found")
-
-    age_data = {"min": min_age, "max": max_age}
-    print(f"DEBUG: Extracted Age Data -> {repr(age_data)}")
-    return age_data
-
-
+# Example usage
+age_lines = ageExtractor("clinical_trial.docx")
+print("Age criteria lines:", age_lines)
