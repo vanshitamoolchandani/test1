@@ -1,0 +1,44 @@
+import re
+from docx import Document
+
+def weightExtractor(file_path):
+    inclusion_heading = "Inclusion Criteria"
+    exclusion_heading = "Exclusion Criteria"
+    
+    weight_bmi_patterns = [
+        # Weight patterns
+        r"\b(?:weight|body weight)\b.*?(\d+\.?\d*)\s*(?:kg|kilograms)\b",
+        r"\b(\d+\.?\d*)\s*(?:kg|kilograms)\b.*?\b(?:weight|body weight)\b",
+        r"\b(\d+\.?\d*)\s*-\s*(\d+\.?\d*)\s*(?:kg|kilograms)\b",
+        r"(?:≥|≤|>|<)\s*(\d+\.?\d*)\s*(?:kg|kilograms)\b",
+        
+        # BMI patterns
+        r"\bBMI\b.*?(\d+\.?\d*)\s*to\s*(\d+\.?\d*)\s*kg/m[²2]",
+        r"\bBMI\b.*?(\d+\.?\d*)\s*-\s*(\d+\.?\d*)\s*kg/m[²2]",
+        r"\bBMI\b.*?(?:≥|≤|>|<)\s*(\d+\.?\d*)\s*kg/m[²2]\b"
+    ]
+
+    doc = Document(file_path)
+    found_section = False
+    criteria_lines = set()
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        
+        if text.lower().startswith(inclusion_heading.lower()):
+            found_section = True
+            continue
+        
+        if found_section and text.lower().startswith(exclusion_heading.lower()):
+            break
+        
+        if found_section:
+            # Check for weight/BMI patterns in each paragraph
+            if re.search(r"|".join(weight_bmi_patterns), text, re.IGNORECASE):
+                criteria_lines.add(text)
+
+    return list(criteria_lines)
+
+# Example usage
+weight_lines = weightExtractor("clinical_trial.docx")
+print("Weight/BMI criteria:", weight_lines)
