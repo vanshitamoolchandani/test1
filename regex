@@ -1,24 +1,41 @@
 import json
-import hug
 import os
 from utils.text_processing import read_word_file
-from utils.extract_data import ( titleExtractor, amendmentDateExtractor, AgeExtractor)
+from utils.extract_data import titleExtractor, amendmentDateExtractor, AgeExtractor
 
+# Directory containing protocol files
+protocol_dir = "/home/vanshita.m297/Desktop/PS updated/Protocol-Scrapper/data/"
+output_dir = "output/"
 
+# Ensure the output directory exists
+os.makedirs(output_dir, exist_ok=True)
 
-file_path = "/home/vanshita.m297/Desktop/PS updated/Protocol-Scrapper/data/77242113PSO3001---Protocol.docx"
+# List all .docx files in the protocol directory
+protocol_files = [f for f in os.listdir(protocol_dir) if f.endswith(".docx")]
 
-if not os.path.exists(file_path):
-    print(f"Errror finding the path, {e}")
+if not protocol_files:
+    print("No protocol files found.")
+else:
+    for file_name in protocol_files:
+        file_path = os.path.join(protocol_dir, file_name)
 
+        # Check if the file exists
+        if not os.path.exists(file_path):
+            print(f"Error: File not found - {file_path}")
+            continue
 
-extracted_data = {
-                    "Title of Protocol": titleExtractor(file_path),
-                    "Amendment Date": amendmentDateExtractor(file_path),
-                    "Age": AgeExtractor(file_path)
-}
-output_file = "output/extracted_data.json"
-with open(output_file, "w") as f:
-    json.dump(extracted_data, f, indent=4)
+        # Extract data
+        extracted_data = {
+            "Title of Protocol": titleExtractor(file_path),
+            "Amendment Date": amendmentDateExtractor(file_path),
+            "Age": AgeExtractor(file_path),
+        }
 
-print("complete")
+        # Define JSON output file name based on protocol name
+        output_file = os.path.join(output_dir, f"{os.path.splitext(file_name)[0]}.json")
+
+        # Save extracted data to JSON
+        with open(output_file, "w") as f:
+            json.dump(extracted_data, f, indent=4)
+
+        print(f"Extraction complete: {output_file}")
