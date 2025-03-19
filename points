@@ -1,60 +1,56 @@
-from docx import Document
 import re
+import json
+from docx import Document
 
-def count_criteria_points(file_path):
-    doc = Document(file_path)
-    
-    result = {
+def count_points(doc_path):
+    doc = Document(doc_path)
+    sections = {
         "Inclusion Criteria": {"total_points": 0, "points": []},
         "Exclusion Criteria": {"total_points": 0, "points": []}
     }
-    
     current_section = None
-    current_main_point = None
-    
-    main_point_pattern = re.compile(r'^(\d+[\.\)]|[A-Z]\))\s+')  # 1., 1), A)
-    sub_point_pattern_1 = re.compile(r'^(\d+\.\d+|[a-z]\)|[-•*])\s+')  # 1.1, a), -, •
-    sub_point_pattern_2 = re.compile(r'^(\d+\.\d+\.\d+|[ivxlcdm]+\))\s+')  # 1.1.1, i), ii)
-    sub_point_pattern_3 = re.compile(r'^(\d+\.\d+\.\d+|\([ivxlcdm]+\)|[a-z]+\.\d+|[*•-])\s+')  
+    current_point = None
+
+    # Enhanced regex patterns
+    point_pattern = re.compile(r'^(\d+)[.)]\s')  # Matches 1., 1), 2., etc.
+    subpoint_pattern = re.compile(r'^([A-Za-z])[.)]\s')  # Matches A., a), B., etc.
+    subsubpoint_pattern = re.compile(r'^(i{1,3}|iv|vi{0,3}x{0,1}|[a-z])[.)]\s', re.IGNORECASE)  # Matches i., ii), etc.
 
     for para in doc.paragraphs:
         text = para.text.strip()
-        print(f"Processing: {text}")  # Debug
         
-        if re.match(r'^Inclusion\s+Criteria$', text, re.IGNORECASE):
-            print("Switching to Inclusion Criteria")  # Debug
+        # Section detection
+        if "Inclusion Criteria" in text:
             current_section = "Inclusion Criteria"
             continue
-            
-        if re.match(r'^Exclusion\s+Criteria$', text, re.IGNORECASE):
-            print("Switching to Exclusion Criteria")  # Debug
+        elif "Exclusion Criteria" in text:
             current_section = "Exclusion Criteria"
             continue
             
         if current_section:
-            main_match = main_point_pattern.match(text)
-            if main_match:
-                print(f"New main point in {current_section}: {text}")  # Debug
-                current_main_point = {"Point_number": result[current_section]["total_points"] + 1, "subpoints_count": 0, "sub_subpoints_count": 0, "sub_sub_subpoints_count": 0}
-                result[current_section]["points"].append(current_main_point)
-                result[current_section]["total_points"] += 1
-                continue
-                
-            sub_match_1 = sub_point_pattern_1.match(text)
-            if sub_match_1 and current_main_point:
-                print(f"New subpoint under {current_section} - Point {current_main_point['Point_number']}")  # Debug
-                current_main_point["subpoints_count"] += 1
-                continue
-                
-            sub_match_2 = sub_point_pattern_2.match(text)
-            if sub_match_2 and current_main_point:
-                print(f"New sub-subpoint under {current_section} - Point {current_main_point['Point_number']}")  # Debug
-                current_main_point["sub_subpoints_count"] += 1
-                continue
-                
-            sub_match_3 = sub_point_pattern_3.match(text)
-            if sub_match_3 and current_main_point:
-              print(f"New sub-sub-subpoint under {current_section} - Point {current_main_point['Point_number']}")  # Debug
-              current_main_point["sub_sub_subpoints_count"] += 1
-                          
-    return result
+            # Main point detection
+            if point_match := re.match(point_pattern, text):
+                point_num = int(point_match.group(1))
+                sections[current_section]["total_points"] += 1
+                current_point = {
+                    "Point_number": point_num,
+                    "subpoints_count": 0,
+                    "sub-subpoints_count": 0
+                }
+                sections[current_section]["points"].append(current_point)
+            
+            # Subpoint detection
+            elif subpoint_match := re.match(subpoint_pattern, text):
+                if current_point:
+                    current_point["subpoints_count"] += 1
+            
+            # Sub-subpoint detection
+            elif subsubpoint_match := re.match(subsubpoint_pattern, text):
+                if current_point and current_point["subpoints_count"] > 0:
+                    current_point["sub-subpoints_count"] += 1
+
+    return {"count": sections}
+
+# Usage
+result = count_points("example.docx")
+print(json.dumps(result, indent=2))
