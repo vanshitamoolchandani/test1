@@ -1,0 +1,66 @@
+from docx import Document
+import re
+
+def count_criteria_points(file_path):
+    """
+    Returns structure:
+    {
+        "Inclusion Criteria": {
+            "total_points": int,
+            "total_subpoints": int,
+            "points": [{"text": str, "subpoints_count": int}, ...]
+        },
+        "Exclusion Criteria": {
+            "total_points": int,
+            "total_subpoints": int,
+            "points": [{"text": str, "subpoints_count": int}, ...]
+        }
+    }
+    """
+    doc = Document(file_path)
+    
+    result = {
+        "Inclusion Criteria": {"total_points": 0, "total_subpoints": 0, "points": []},
+        "Exclusion Criteria": {"total_points": 0, "total_subpoints": 0, "points": []}
+    }
+    
+    current_section = None
+    current_main_point = None
+    
+    # Regex patterns for different numbering styles
+    main_point_pattern = re.compile(r'^\s*\d+[\.\)]\s+(.*)')
+    sub_point_pattern = re.compile(r'^\s*([a-z]\)|\*|\-|•|\d+\.\d+[\.\)]?|\+)\s+(.*)')
+    
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        
+        # Detect section headers
+        if re.match(r'^Inclusion\s+Criteria$', text, re.IGNORECASE):
+            current_section = "Inclusion Criteria"
+            current_main_point = None
+            continue
+            
+        if re.match(r'^Exclusion\s+Criteria$', text, re.IGNORECASE):
+            current_section = "Exclusion Criteria"
+            current_main_point = None
+            continue
+            
+        if current_section:
+            # Main point detection
+            main_match = main_point_pattern.match(text)
+            if main_match:
+                current_main_point = {
+                    "text": main_match.group(1).strip(),
+                    "subpoints_count": 0
+                }
+                result[current_section]["points"].append(current_main_point)
+                result[current_section]["total_points"] += 1
+                continue
+                
+            # Subpoint detection
+            sub_match = sub_point_pattern.match(text)
+            if sub_match and current_main_point:
+                current_main_point["subpoints_count"] += 1
+                result[current_section]["total_subpoints"] += 1
+                
+    return result
