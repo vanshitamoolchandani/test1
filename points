@@ -2,76 +2,59 @@ from docx import Document
 import re
 
 def count_criteria_points(file_path):
-    """
-    Returns structure:
-    {
-        "Inclusion Criteria": {
-            "total_points": int,
-            "total_subpoints": int,
-            "points": [{"Point_number": int, "subpoints_count": int}, ...]
-        },
-        "Exclusion Criteria": {
-            "total_points": int,
-            "total_subpoints": int,
-            "points": [{"Point_number": int, "subpoints_count": int}, ...]
-        }
-    }
-    """
     doc = Document(file_path)
     
     result = {
-        "Inclusion Criteria": {"total_points": 0, "total_subpoints": 0, "points": []},
-        "Exclusion Criteria": {"total_points": 0, "total_subpoints": 0, "points": []}
+        "Inclusion Criteria": {"total_points": 0, "points": []},
+        "Exclusion Criteria": {"total_points": 0, "points": []}
     }
     
     current_section = None
     current_main_point = None
     
-    # Regex patterns for different numbering styles
-    main_point_pattern = re.compile(r'^\s*(\d+)[\.\)]\s+(.*)')
-    sub_point_pattern = re.compile(
-        r'^\s*([a-zA-Z]\)|[\*\-\+•]|(\d+[\.\)])+|\d+\.\d+[\.\)]?)\s+(.*)',
-        re.IGNORECASE
-    )
-    
+    main_point_pattern = re.compile(r'^(\d+[\.\)]|[A-Z]\))\s+')  # 1., 1), A)
+    sub_point_pattern_1 = re.compile(r'^(\d+\.\d+|[a-z]\)|[-•*])\s+')  # 1.1, a), -, •
+    sub_point_pattern_2 = re.compile(r'^(\d+\.\d+\.\d+|[ivxlcdm]+\))\s+')  # 1.1.1, i), ii)
+    sub_point_pattern_3 = re.compile(r'^(\d+\.\d+\.\d+|\([ivxlcdm]+\)|[a-z]+\.\d+|[*•-])\s+')  
+
     for para in doc.paragraphs:
         text = para.text.strip()
-        print(f"\nProcessing paragraph: '{text}'")  # Debug
+        print(f"Processing: {text}")  # Debug
         
-        # Detect section headers (more flexible matching)
-        if re.match(r'^Inclusion\s+Criteria\b.*', text, re.IGNORECASE):
+        if re.match(r'^Inclusion\s+Criteria$', text, re.IGNORECASE):
+            print("Switching to Inclusion Criteria")  # Debug
             current_section = "Inclusion Criteria"
-            current_main_point = None
-            print(f"✅ Detected section: {current_section}")
             continue
             
-        if re.match(r'^Exclusion\s+Criteria\b.*', text, re.IGNORECASE):
+        if re.match(r'^Exclusion\s+Criteria$', text, re.IGNORECASE):
+            print("Switching to Exclusion Criteria")  # Debug
             current_section = "Exclusion Criteria"
-            current_main_point = None
-            print(f"✅ Detected section: {current_section}")
             continue
             
         if current_section:
-            # Main point detection
             main_match = main_point_pattern.match(text)
             if main_match:
-                point_number = int(main_match.group(1))
-                current_main_point = {
-                    "Point_number": point_number,
-                    "subpoints_count": 0
-                }
+                print(f"New main point in {current_section}: {text}")  # Debug
+                current_main_point = {"Point_number": result[current_section]["total_points"] + 1, "subpoints_count": 0, "sub_subpoints_count": 0, "sub_sub_subpoints_count": 0}
                 result[current_section]["points"].append(current_main_point)
                 result[current_section]["total_points"] += 1
-                print(f"🔷 Main point {point_number} detected")
                 continue
                 
-            # Subpoint detection
-            sub_match = sub_point_pattern.match(text)
-            if sub_match and current_main_point:
+            sub_match_1 = sub_point_pattern_1.match(text)
+            if sub_match_1 and current_main_point:
+                print(f"New subpoint under {current_section} - Point {current_main_point['Point_number']}")  # Debug
                 current_main_point["subpoints_count"] += 1
-                result[current_section]["total_subpoints"] += 1
-                print(f"  ◦ Subpoint detected under point {current_main_point['Point_number']}")
+                continue
                 
-    print("\nDebug - Final results:")
-    print(result)  # Debug output
+            sub_match_2 = sub_point_pattern_2.match(text)
+            if sub_match_2 and current_main_point:
+                print(f"New sub-subpoint under {current_section} - Point {current_main_point['Point_number']}")  # Debug
+                current_main_point["sub_subpoints_count"] += 1
+                continue
+                
+            sub_match_3 = sub_point_pattern_3.match(text)
+            if sub_match_3 and current_main_point:
+              print(f"New sub-sub-subpoint under {current_section} - Point {current_main_point['Point_number']}")  # Debug
+              current_main_point["sub_sub_subpoints_count"] += 1
+                          
     return result
