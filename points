@@ -9,12 +9,17 @@ def count_points(doc_path):
         "Exclusion Criteria": {"total_points": 0, "points": []}
     }
     current_section = None
-    current_point = None
+    indent_stack = []
 
-    # Enhanced regex patterns
-    point_pattern = re.compile(r'^(\d+)[.)]\s')  # Matches 1., 1), 2., etc.
-    subpoint_pattern = re.compile(r'^([A-Za-z])[.)]\s')  # Matches A., a), B., etc.
-    subsubpoint_pattern = re.compile(r'^(i{1,3}|iv|vi{0,3}x{0,1}|[a-z])[.)]\s', re.IGNORECASE)  # Matches i., ii), etc.
+    # Enhanced bullet pattern with indentation tracking
+    bullet_pattern = re.compile(
+        r'^(\d+[.)]|'                    # Numbered (1., 2))
+        r'[A-Za-z][.)]|'                 # Lettered (A., b))
+        r'(i{1,3}|iv|vi{0,3})[.)]|'      # Roman numerals (i., ii.)
+        r'[\•\*\-\+➢➣])\s+'              # Symbols
+        r'.*', 
+        re.IGNORECASE
+    )
 
     for para in doc.paragraphs:
         text = para.text.strip()
@@ -22,35 +27,44 @@ def count_points(doc_path):
         # Section detection
         if "Inclusion Criteria" in text:
             current_section = "Inclusion Criteria"
+            indent_stack = [0]  # Reset indentation tracking
             continue
         elif "Exclusion Criteria" in text:
             current_section = "Exclusion Criteria"
+            indent_stack = [0]
             continue
-            
-        if current_section:
-            # Main point detection
-            if point_match := re.match(point_pattern, text):
-                point_num = int(point_match.group(1))
+
+        if current_section and bullet_pattern.match(text):
+            # Get indentation in twips
+            indent = para.paragraph_format.left_indent
+            indent_twips = indent.twips if indent else 0
+
+            # Calculate nesting level
+            while indent_stack and indent_twips < indent_stack[-1]:
+                indent_stack.pop()
+                
+            if not indent_stack or indent_twips > indent_stack[-1]:
+                indent_stack.append(indent_twips)
+                
+            current_level = len(indent_stack) - 1
+
+            # Update counts based on nesting level
+            if current_level == 0:  # Main point
                 sections[current_section]["total_points"] += 1
-                current_point = {
-                    "Point_number": point_num,
+                sections[current_section]["points"].append({
+                    "Point_number": sections[current_section]["total_points"],
                     "subpoints_count": 0,
                     "sub-subpoints_count": 0
-                }
-                sections[current_section]["points"].append(current_point)
-            
-            # Subpoint detection
-            elif subpoint_match := re.match(subpoint_pattern, text):
-                if current_point:
-                    current_point["subpoints_count"] += 1
-            
-            # Sub-subpoint detection
-            elif subsubpoint_match := re.match(subsubpoint_pattern, text):
-                if current_point and current_point["subpoints_count"] > 0:
-                    current_point["sub-subpoints_count"] += 1
+                })
+            elif current_level == 1:  # Subpoint
+                if sections[current_section]["points"]:
+                    sections[current_section]["points"][-1]["subpoints_count"] += 1
+            elif current_level >= 2:  # Sub-subpoint
+                if sections[current_section]["points"]:
+                    sections[current_section]["points"][-1]["sub-subpoints_count"] += 1
 
     return {"count": sections}
 
-# Usage
+# Example usage
 result = count_points("example.docx")
 print(json.dumps(result, indent=2))
