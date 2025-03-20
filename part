@@ -1,0 +1,47 @@
+import re
+from docx import Document
+
+def extract_participant_count(file_path):
+    """
+    Extracts the number of participants from a Word document by looking for a heading
+    containing "Sample Size" and then searching for a number immediately followed by
+    the word "Participants" (case-insensitive).
+    """
+    doc = Document(file_path)
+    
+    # Pattern to match the "Sample Size" heading
+    sample_size_heading_pattern = re.compile(r"^\s*(\d+(\.\d+)*)?\s*Sample\s+Size\s*$", re.IGNORECASE)
+    
+    # Pattern to match a number immediately followed by "Participants" (case-insensitive)
+    participants_pattern = re.compile(r"(\d+)\s+Participants\b", re.IGNORECASE)
+
+    found_sample_size = False
+    participant_count = None
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+
+        # Check if this line is a valid 'Sample Size' heading
+        if sample_size_heading_pattern.match(text):
+            print(f"Found 'Sample Size' heading: '{text}'")
+            found_sample_size = True
+            continue  # Skip the heading itself
+        
+        # If we're in the Sample Size section, look for the pattern "number Participants"
+        if found_sample_size:
+            # Search for the pattern "number Participants"
+            match = participants_pattern.search(text)
+            if match:
+                participant_count = int(match.group(1))  # Extract the number
+                print(f"Found participant count: {participant_count}")
+                break  # Stop after finding the first valid number
+
+    if participant_count is not None:
+        return participant_count
+    else:
+        return "No participant count found."
+
+# Example usage
+file_path = "clinical_trial.docx"
+count = extract_participant_count(file_path)
+print(f"Number of participants: {count}")
