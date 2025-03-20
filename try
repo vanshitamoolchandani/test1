@@ -1,1 +1,4 @@
     bullet_pattern = re.compile(r"^\s*(\d+(\.\d+)*[.)]?|[-•])\s+")
+
+
+    inclusion_heading_pattern = re.compile(r"^\s*(\d+(\.\d+)*)\s*Inclusion Criteria\s*$", re.IGNORECASE)
