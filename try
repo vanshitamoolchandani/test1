@@ -1,2 +1,50 @@
-inclusion_heading_pattern = re.compile(r"^\s*(\d+(\.\d+)*)\s*Inclusion Criteria\s*$", re.IGNORECASE)
+import re
+from docx import Document
+
+def count_inclusion_criteria(file_path):
+    """
+    Extracts and counts the number of bullet points under the 'Inclusion Criteria' section
+    in a given Word document. It stores the numbering of the Inclusion Criteria section
+    (e.g., '2.3') and stops when it encounters the next section with the same numbering level.
+    """
+    doc = Document(file_path)
+    
+    # Pattern to match the "Inclusion Criteria" heading
+    inclusion_heading_pattern = re.compile(r"^\s*(\d+(\.\d+)*)\s*Inclusion\s+Criteria\s*$", re.IGNORECASE)
+    
+    # Pattern to match bullet points or numbered lists
     bullet_pattern = re.compile(r"^\s*(\d+(\.\d+)*[.)]?|[-•])\s+")
+
+    found_section = False
+    inclusion_count = 0
+    inclusion_numbering = None  # Stores the numbering of the Inclusion Criteria section (e.g., '2.3')
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+
+        # Check if this line is a valid 'Inclusion Criteria' heading
+        if inclusion_heading_pattern.match(text):
+            # Extract the numbering (e.g., '2.3')
+            inclusion_numbering = inclusion_heading_pattern.match(text).group(1)
+            print(f"Found 'Inclusion Criteria' heading: '{text}' | Numbering: '{inclusion_numbering}'")
+            found_section = True
+            continue  # Skip the heading itself
+        
+        # If we're in the Inclusion Criteria section, check for bullet points
+        if found_section:
+            # Check if this is a new section with the same numbering level
+            if re.match(rf"^\s*{inclusion_numbering}\.\d+\s+", text):
+                print(f"Stopping at new section with same numbering level: '{text}'")
+                break
+            
+            # Count bullet points under the Inclusion Criteria section
+            if bullet_pattern.match(text):
+                inclusion_count += 1
+                print(f"Found bullet point: '{text}'")
+
+    return inclusion_count
+
+# Example usage
+file_path = "clinical_trial.docx"
+count = count_inclusion_criteria(file_path)
+print(f"Number of Inclusion Criteria points: {count}")
