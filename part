@@ -11,7 +11,8 @@ def extract_participant_count(file_path):
     
     # Pattern to match the "Sample Size" heading
     sample_size_heading_pattern = re.compile(r"^\s*(\d+(\.\d+)*)?\s*Sample\s+Size\s*$", re.IGNORECASE)
-    
+    ^\s*\d+(\.\d+)*\s*[-:]?\s*\bSample Size\b.*$
+
     # Pattern to match a number immediately followed by "Participants" (case-insensitive)
     participants_pattern = re.compile(r"(\d+)\s+Participants\b", re.IGNORECASE)
 
