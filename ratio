@@ -1,10 +1,10 @@
 import re
 from docx import Document
 
-def extract_ratios(file_path):
+def extract_ratio_sentences(file_path):
     """
-    Extracts ratios from a Word document by searching for the word "ratio" and checking
-    the surrounding text (±5 words) for patterns like x:y, x:y:z, etc.
+    Extracts sentences containing the word "ratio" and a valid ratio (±5 words).
+    Returns an array of such sentences.
     """
     doc = Document(file_path)
     
@@ -14,7 +14,7 @@ def extract_ratios(file_path):
     # Pattern to match ratios like x:y, x:y:z, etc., where x, y, z are numbers
     ratio_pattern = re.compile(r"\b(\d+:\d+(?::\d+)*)\b")
     
-    ratios_found = []
+    ratio_sentences = []
 
     for para in doc.paragraphs:
         text = para.text.strip()
@@ -24,26 +24,40 @@ def extract_ratios(file_path):
         if ratio_keyword_match:
             print(f"Found 'ratio' in text: '{text}'")
             
-            # Extract the surrounding text (±5 words)
-            words = text.split()
-            keyword_index = words.index(ratio_keyword_match.group())
-            start = max(0, keyword_index - 5)
-            end = min(len(words), keyword_index + 6)  # +6 to include the 5th word
-            surrounding_text = " ".join(words[start:end])
-            
-            # Search for ratio patterns in the surrounding text
-            ratio_matches = ratio_pattern.findall(surrounding_text)
-            if ratio_matches:
-                print(f"Found ratios in surrounding text: {ratio_matches}")
-                ratios_found.extend(ratio_matches)
+            # Extract the entire sentence containing the word "ratio"
+            sentences = re.split(r'(?<=[.!?])\s+', text)  # Split text into sentences
+            for sentence in sentences:
+                if ratio_keyword_pattern.search(sentence):
+                    # Normalize the sentence: lowercase and remove punctuation
+                    normalized_sentence = re.sub(r'[^\w\s]', '', sentence.lower())
+                    words = normalized_sentence.split()
+                    
+                    # Find the index of the word "ratio"
+                    try:
+                        keyword_index = words.index("ratio")
+                    except ValueError:
+                        print("Word 'ratio' not found in the normalized sentence. Skipping this sentence.")
+                        continue
+                    
+                    # Extract the surrounding text (±5 words)
+                    start = max(0, keyword_index - 5)
+                    end = min(len(words), keyword_index + 6)  # +6 to include the 5th word
+                    surrounding_text = " ".join(words[start:end])
+                    
+                    # Search for ratio patterns in the surrounding text
+                    ratio_matches = ratio_pattern.findall(surrounding_text)
+                    if ratio_matches:
+                        print(f"Found ratios in sentence: {sentence}")
+                        ratio_sentences.append(sentence)
     
-    if ratios_found:
-        return ratios_found
+    if ratio_sentences:
+        return ratio_sentences
     else:
-        return "No ratios found."
+        return "No sentences with valid ratios found."
 
 # Example usage
 file_path = "ratios_example.docx"
-ratios = extract_ratios(file_path)
-print("Extracted ratios:")
-print(ratios)
+sentences = extract_ratio_sentences(file_path)
+print("Extracted sentences with ratios:")
+for sentence in sentences:
+    print(sentence)
