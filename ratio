@@ -12,7 +12,7 @@ def extract_ratio_sentences(file_path):
     ratio_keyword_pattern = re.compile(r"\bratio\b", re.IGNORECASE)
     
     # Pattern to match ratios like x:y, x:y:z, etc., where x, y, z are numbers
-    ratio_pattern = re.compile(r"\b(\d+:\d+(?::\d+)*)\b")
+ratio_pattern = re.compile(r"\b(\d+\s*:\s*\d+(?:\s*:\s*\d+)*)\b")
     
     ratio_sentences = []
 
