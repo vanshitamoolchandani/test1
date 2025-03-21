@@ -1,0 +1,49 @@
+import re
+from docx import Document
+
+def extract_ratios(file_path):
+    """
+    Extracts ratios from a Word document by searching for the word "ratio" and checking
+    the surrounding text (±5 words) for patterns like x:y, x:y:z, etc.
+    """
+    doc = Document(file_path)
+    
+    # Pattern to match the word "ratio" (case-insensitive)
+    ratio_keyword_pattern = re.compile(r"\bratio\b", re.IGNORECASE)
+    
+    # Pattern to match ratios like x:y, x:y:z, etc., where x, y, z are numbers
+    ratio_pattern = re.compile(r"\b(\d+:\d+(?::\d+)*)\b")
+    
+    ratios_found = []
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        
+        # Search for the word "ratio"
+        ratio_keyword_match = ratio_keyword_pattern.search(text)
+        if ratio_keyword_match:
+            print(f"Found 'ratio' in text: '{text}'")
+            
+            # Extract the surrounding text (±5 words)
+            words = text.split()
+            keyword_index = words.index(ratio_keyword_match.group())
+            start = max(0, keyword_index - 5)
+            end = min(len(words), keyword_index + 6)  # +6 to include the 5th word
+            surrounding_text = " ".join(words[start:end])
+            
+            # Search for ratio patterns in the surrounding text
+            ratio_matches = ratio_pattern.findall(surrounding_text)
+            if ratio_matches:
+                print(f"Found ratios in surrounding text: {ratio_matches}")
+                ratios_found.extend(ratio_matches)
+    
+    if ratios_found:
+        return ratios_found
+    else:
+        return "No ratios found."
+
+# Example usage
+file_path = "ratios_example.docx"
+ratios = extract_ratios(file_path)
+print("Extracted ratios:")
+print(ratios)
