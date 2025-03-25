@@ -1,77 +1,56 @@
-import os
-import fitz  # PyMuPDF
-import spacy
-import pytesseract
-from PIL import Image
-import cv2
-import re
-from spacy.matcher import Matcher
-
-# Initialize spaCy
-nlp = spacy.load("en_core_web_sm")
-
-def preprocess_image(image_path):
-    """Enhance image quality for OCR"""
-    img = cv2.imread(image_path)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    processed = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
-    return processed
-
-def extract_drug_names(text):
-    """Extract drug names using spaCy NER and pattern matching"""
-    doc = nlp(text)
-    drugs = []
-    
-    # Pattern for drug-like words (case-sensitive)
-    pattern = [{"POS": "PROPN", "OP": "+"}, {"TEXT": {"REGEX": "[A-Z][a-z]*"}}]
-    matcher = Matcher(nlp.vocab)
-    matcher.add("DRUG_PATTERN", [pattern])
-    
-    # Extract NER chemicals
-    for ent in doc.ents:
-        if ent.label_ == "CHEMICAL":
-            drugs.append(ent.text)
-    
-    # Extract pattern matches
-    matches = matcher(doc)
-    for match_id, start, end in matches:
-        span = doc[start:end]
-        drugs.append(span.text)
-    
-    return list(set(drugs))
-
 def process_pdf(pdf_path):
-    """Main processing function"""
-    # Create output directory
+    """Main processing function with detailed debugging"""
+    # Setup protocol name and folders
     protocol_name = os.path.splitext(os.path.basename(pdf_path))[0]
-    output_dir = f"Schema_Images_{protocol_name}"
+    output_dir = f"{protocol_name}-schema"
     os.makedirs(output_dir, exist_ok=True)
-    
+    debug_print("created output directory", output_dir)
+
     doc = fitz.open(pdf_path)
-    in_schema_section = False
-    figure_count = 0
+    schema_text = []
+    study_design_text = []
     image_drugs = []
-    text_drugs = []
-    
-    # Extract study design text first
-    study_design_text = ""
-    for page in doc:
-        text = page.get_text()
-        if "Study Design" in text:
-            study_design_text += text + "\n"
-    
-    # Process pages for Schema section
+    figure_count = 0
+
+    # ================== SCHEMA SECTION PROCESSING ==================
+    debug_print("processing schema section", "Starting PDF scan")
+    in_schema = False
+    current_heading = None
+
     for page_num, page in enumerate(doc):
-        text = page.get_text()
+        debug_print(f"processing page {page_num+1}", "")
+        blocks = page.get_text("dict")["blocks"]
         
-        # Detect section headers
-        if "Schema" in text:
-            in_schema_section = True
-        elif in_schema_section and "\\x0c" in text:  # Form feed character
-            in_schema_section = False
-            
-        if in_schema_section:
-            # Extract images
+        for block in blocks:
+            if "lines" in block:
+                # Check for headings (assuming headings are in larger font)
+                for span in block["lines"][0]["spans"]:
+                    text = span["text"].strip()
+                    font_size = span["size"]
+                    
+                    # Detect headings based on common heading font sizes
+                    if font_size > 11 and text.isupper():
+                        debug_print("heading detected", f"'{text}' (size: {font_size})")
+                        
+                        if text == "SCHEMA":
+                            in_schema = True
+                            current_heading = "SCHEMA"
+                            debug_print("entered schema section", "")
+                        elif in_schema and current_heading == "SCHEMA":
+                            debug_print("exiting schema section", f"New heading: {text}")
+                            in_schema = False
+                        elif text == "STUDY DESIGN":
+                            current_heading = "STUDY DESIGN"
+                            debug_print("entered study design section", "")
+
+                    # Collect text based on current section
+                    if in_schema and current_heading == "SCHEMA":
+                        schema_text.append(text)
+                    elif current_heading == "STUDY DESIGN":
+                        study_design_text.append(text)
+
+        # Extract images only in schema section
+        if in_schema and current_heading == "SCHEMA":
             img_list = page.get_images()
             for img_index, img in enumerate(img_list):
                 figure_count += 1
@@ -80,33 +59,46 @@ def process_pdf(pdf_path):
                 image_bytes = base_image["image"]
                 
                 # Save image
-                img_path = os.path.join(output_dir, f"Figure {figure_count}.png")
+                img_name = f"Figure {figure_count}.png"
+                img_path = os.path.join(output_dir, img_name)
                 with open(img_path, "wb") as img_file:
                     img_file.write(image_bytes)
+                debug_print("image saved", img_path)
                 
                 # OCR processing
-                processed_img = preprocess_image(img_path)
-                ocr_text = pytesseract.image_to_string(processed_img)
+                ocr_text = pytesseract.image_to_string(Image.open(img_path))
+                debug_print(f"ocr text from {img_name}", ocr_text)
                 image_drugs.extend(extract_drug_names(ocr_text))
-    
-    # Extract drugs from study design
-    text_drugs = extract_drug_names(study_design_text)
-    
-    # Cross-validate drug names
-    matched = set(image_drugs) & set(text_drugs)
-    mismatched = set(image_drugs) ^ set(text_drugs)
-    
-    print(f"Protocol Name: {protocol_name}")
-    print(f"Matched Drug Names: {matched}")
-    print(f"Potential Mismatches: {mismatched}")
-    
-    # Save results to file
-    with open(os.path.join(output_dir, "drug_validation.txt"), "w") as f:
-        f.write(f"Matched Drug Names: {', '.join(matched)}\n")
-        f.write(f"Potential Mismatches: {', '.join(mismatched)}\n")
-    
-    return output_dir
 
-# Usage
-pdf_path = "your_protocol.pdf"
-output_directory = process_pdf(pdf_path)
+    # ================== STUDY DESIGN PROCESSING ==================
+    debug_print("processing study design section", "")
+    study_design_full = " ".join(study_design_text)
+    text_drugs = extract_drug_names(study_design_full))
+
+    # ================== VALIDATION ==================
+    schema_full_text = " ".join(schema_text)
+    schema_drugs = extract_drug_names(schema_full_text)
+    image_drugs = list(set(image_drugs))
+    
+    debug_print("schema drugs", schema_drugs)
+    debug_print("image drugs", image_drugs)
+    debug_print("study design drugs", text_drugs)
+
+    # Cross-checking
+    all_image_drugs = list(set(schema_drugs + image_drugs))
+    matches = set(all_image_drugs) & set(text_drugs)
+    mismatches = set(all_image_drugs).symmetric_difference(text_drugs)
+
+    # Save debug files
+    with open(os.path.join(output_dir, "schema_text.txt"), "w") as f:
+        f.write(schema_full_text)
+    with open(os.path.join(output_dir, "study_design.txt"), "w") as f:
+        f.write(study_design_full)
+
+    debug_print("final matches", matches)
+    debug_print("potential mismatches", mismatches)
+
+    return {
+        "matches": list(matches),
+        "mismatches": list(mismatches)
+    }
