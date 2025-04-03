@@ -11,7 +11,8 @@ def ArmCohortTableExtractor(file_path):
     doc = Document(file_path)
     
     # Define regex pattern to match the table label
-    table_label_pattern = re.compile(        r"Table\s+([\dA-Za-z]+):\s*Description\s+of\s+(Intervention|Intervension|Treatment)\s*(.*?)(?=(Table\s+[\dA-Za-z]+:|$))",
+    table_label_pattern = re.compile(    r"(?:Table\s+[\dA-Za-z]+:\s*)?Description\s+of\s+(?:Study\s+Arms|Interventions|Treatment)(?:\s+.+)?",
+
 , re.IGNORECASE)
     
     target_table = None
