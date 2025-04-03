@@ -1,104 +1,176 @@
-def process_pdf(pdf_path):
-    """Main processing function with detailed debugging"""
-    # Setup protocol name and folders
-    protocol_name = os.path.splitext(os.path.basename(pdf_path))[0]
-    output_dir = f"{protocol_name}-schema"
-    os.makedirs(output_dir, exist_ok=True)
-    debug_print("created output directory", output_dir)
+def schemaExtarctor(file_path):
 
-    doc = fitz.open(pdf_path)
-    schema_text = []
-    study_design_text = []
-    image_drugs = []
-    figure_count = 0
+    schema_heading = re.compile(r"^\s*(\d+(\.\d+)*)?\s*Schema\s*$", re.IGNORECASE)
+    doc = Document(file_path)
 
-    # ================== SCHEMA SECTION PROCESSING ==================
-    debug_print("processing schema section", "Starting PDF scan")
-    in_schema = False
-    current_heading = None
-
-    for page_num, page in enumerate(doc):
-        debug_print(f"processing page {page_num+1}", "")
-        blocks = page.get_text("dict")["blocks"]
-        
-        for block in blocks:
-            if "lines" in block:
-                # Check for headings (assuming headings are in larger font)
-                for span in block["lines"][0]["spans"]:
-                    text = span["text"].strip()
-                    font_size = span["size"]
-                    
-                    # Detect headings based on common heading font sizes
-                    if font_size > 11 and text.isupper():
-                        debug_print("heading detected", f"'{text}' (size: {font_size})")
-                        
-                        if text == "SCHEMA":
-                            in_schema = True
-                            current_heading = "SCHEMA"
-                            debug_print("entered schema section", "")
-                        elif in_schema and current_heading == "SCHEMA":
-                            debug_print("exiting schema section", f"New heading: {text}")
-                            in_schema = False
-                        elif text == "STUDY DESIGN":
-                            current_heading = "STUDY DESIGN"
-                            debug_print("entered study design section", "")
-
-                    # Collect text based on current section
-                    if in_schema and current_heading == "SCHEMA":
-                        schema_text.append(text)
-                    elif current_heading == "STUDY DESIGN":
-                        study_design_text.append(text)
-
-        # Extract images only in schema section
-        if in_schema and current_heading == "SCHEMA":
-            img_list = page.get_images()
-            for img_index, img in enumerate(img_list):
-                figure_count += 1
-                xref = img[0]
-                base_image = doc.extract_image(xref)
-                image_bytes = base_image["image"]
-                
-                # Save image
-                img_name = f"Figure {figure_count}.png"
-                img_path = os.path.join(output_dir, img_name)
-                with open(img_path, "wb") as img_file:
-                    img_file.write(image_bytes)
-                debug_print("image saved", img_path)
-                
-                # OCR processing
-                ocr_text = pytesseract.image_to_string(Image.open(img_path))
-                debug_print(f"ocr text from {img_name}", ocr_text)
-                image_drugs.extend(extract_drug_names(ocr_text))
-
-    # ================== STUDY DESIGN PROCESSING ==================
-    debug_print("processing study design section", "")
-    study_design_full = " ".join(study_design_text)
-    text_drugs = extract_drug_names(study_design_full))
-
-    # ================== VALIDATION ==================
-    schema_full_text = " ".join(schema_text)
-    schema_drugs = extract_drug_names(schema_full_text)
-    image_drugs = list(set(image_drugs))
     
-    debug_print("schema drugs", schema_drugs)
-    debug_print("image drugs", image_drugs)
-    debug_print("study design drugs", text_drugs)
+    schema_heading_found = False
+    section_text = []
+    
 
-    # Cross-checking
-    all_image_drugs = list(set(schema_drugs + image_drugs))
-    matches = set(all_image_drugs) & set(text_drugs)
-    mismatches = set(all_image_drugs).symmetric_difference(text_drugs)
 
-    # Save debug files
-    with open(os.path.join(output_dir, "schema_text.txt"), "w") as f:
-        f.write(schema_full_text)
-    with open(os.path.join(output_dir, "study_design.txt"), "w") as f:
-        f.write(study_design_full)
+    for para in doc.paragraphs:
+        text = para.text.strip()
 
-    debug_print("final matches", matches)
-    debug_print("potential mismatches", mismatches)
+        if schema_heading.match(text):
+            print(f"Found Schema heading: {text}")
+            schema_heading_found = True
+            continue
 
-    return {
-        "matches": list(matches),
-        "mismatches": list(mismatches)
+        if schema_heading_found:
+            if para.style.name.startswith("Heading"):
+                print(f"New heading: {text}")
+                break
+            section_text.append(text)
+
+    return "\n".join(section_text)
+
+
+def imageTextExtractor(file_path):
+    doc = Document(file_path)
+    protocol_name = os.path.splitext(os.path.basename(file_path))[0]
+    image_folder = f"{protocol_name}-schema"
+    os.makedirs(image_folder, exist_ok=True)
+
+    figure_pattern = re.compile(r'(Figure \d+[^\n]*)')
+    image_count = 0
+    figure_labels = []
+
+    schema_heading = re.compile(r"^\s*(\d+(\.\d+)*)?\s*Schema\s*$", re.IGNORECASE)
+
+    
+    schema_heading_found = False
+    section_texts = []
+    
+
+    print(f"created folder: {image_folder}")
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+
+        if schema_heading.match(text):
+            print(f"Found Schema heading: {text}")
+            schema_heading_found = True
+            continue
+
+        if schema_heading_found:
+            if para.style.name.startswith("Heading"):
+                print(f"New heading: {text}")
+                break
+
+            match = figure_pattern.search(text)
+            if match:
+                label = match.group().replace(" ", "_").replace("/", "-") + ".png"
+                figure_labels.append(label)
+                print(f"found image lable: {label}")
+    
+    image_index = 0
+
+    for rel in doc.part.rels:
+            if "image" in doc.part.rels[rel].target_ref:
+                if image_index < len(figure_labels):
+                    image = doc.part.rels[rel].target_part.blob
+                    img = Image.open(BytesIO(image))
+                    image_path = os.path.join(image_folder, figure_labels[image_index])
+                    img.save(image_path)
+                    print(f"saved image: {image_path}")
+
+                    section_text = pytesseract.image_to_string(img)
+                    section_texts.append(f"{figure_labels[image_index]}:\n{section_text}\n")
+                    print(f"Extracted text from: {figure_labels[image_index]}")
+                    image_index += 1
+
+    debug_text_path = os.path.join(image_folder, "section_texts.txt")
+    with open(debug_text_path, "w", encoding="utf-8") as f:
+        f.writelines(section_texts)
+    print(f"Saved extracted text: {debug_text_path}")
+
+    return image_folder
+
+
+def drugNameExtractor(text):
+    print("Extacting drug name...")
+    nlp = spacy.load("en_core_web_sm")
+    doc = nlp(text)
+
+    for ent in doc.ents:
+        print(f"Text: '{ent.text}' | Label: {ent.label_}")
+
+    drug_names = set()
+
+    for ent in doc.ents:
+        if ent.label_ == "PRODUCT":
+            drug_names.add(ent.text)
+
+    print(f"Extracted drug names: {drug_names}")
+
+    return drug_names
+
+
+def studyTextExtractor(file_path):
+    print("Extracting Study Design section...")
+    study_design_heading = re.compile(r"^\s*(\d+(\.\d+)*)?\s*Overall Design\s*$")
+    doc = Document(file_path)
+    study_design_found = False
+    study_text = []
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+
+        if study_design_heading.match(text):
+            print(f"Study design -> overall study found: {text}")
+            study_design_found = True
+            continue
+
+        if study_design_found:
+            if para.style.name.startswith("Heading"):
+                print(f"Next heading encounter {text}")
+                break
+
+            study_text.append(text)
+    
+    return "\n".join(study_text)
+
+
+def armCohortInfoExtractore(text):
+    print("Extracting Arm and Cohort Info")
+    arm_cohort_pattern = re.compile(r'(Arm|Cohort)\s*(\d+)[:,]?\s*(.*)')
+    arm_cohort_data = {}
+
+    for match in arm_cohort_pattern.finditer(text):
+        label = match.group(1) + " " + match.group(2)
+        value = match.group(3)
+        arm_cohort_data[label] = value
+        print(f"found: {label} -> {value}")
+
+    return arm_cohort_data
+
+def validateDrugExtractor(text_drugs, image_text_drugs):
+    print("Validating extracted drug names")
+    common_drug = text_drugs.intersection(image_text_drugs)
+    missing_in_text = image_text_drugs - text_drugs
+    missing_in_image = text_drugs - image_text_drugs
+
+    print(f"drugs found in both: {common_drug}")
+    print(f"Drug missing in text: {missing_in_text}")
+    print(f"Drug missing in image: {missing_in_image}")
+    
+    return common_drug, missing_in_text, missing_in_image
+
+
+def Process_document_drug_info(file_path):
+    image_folder = imageTextExtractor(file_path)
+    schema_text = schemaExtarctor(file_path)
+    study_text = studyTextExtractor(file_path)
+    text_drugs = drugNameExtractor(study_text)
+    arm_cohort_info = armCohortInfoExtractore(study_text)
+    image_text_drugs = drugNameExtractor("\n".join(open(os.path.join(image_folder, "section_texts.txt"), encoding = "utf-8").readlines()))
+
+    validateDrugExtractor(text_drugs, image_text_drugs)
+
+    return{
+        "text_drugs": text_drugs,
+        "image_text_drug": image_text_drugs,
+        "arm_cohort_info": arm_cohort_info
     }
+
