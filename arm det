@@ -1,57 +1,45 @@
 import re
+import json
 from docx import Document
 
-def ArmCohortTableExtractor(file_path):
-
-    # Open the document
+def TableExtractor(file_path):
+    table_label_pattern = re.compile(
+        r"(?:Table\s+[\dA-Za-z]+:\s*)?Description\s+of\s+(?:Study\s+Arms|Interventions|Treatment)(?:\s+.+)?",
+        re.IGNORECASE
+    )
+    
+    print(f"Opening document: {file_path}")
     doc = Document(file_path)
     
-    # Define regex pattern to match the table label
-    table_label_pattern = re.compile(    r"(?:Table\s+[\dA-Za-z]+:\s*)?Description\s+of\s+(?:Study\s+Arms|Interventions|Treatment)(?:\s+.+)?",
-
-, re.IGNORECASE)
+    found_heading = False
+    tables_data = []
     
-    target_table = None
-    heading_found = False
-
-    # Find the heading in the document
-    para_index = -1
-    for i, para in enumerate(doc.paragraphs):
-        text = para.text.strip()
-        if table_label_pattern.match(text):
-            print(f"Found heading: {text}")
-            heading_found = True
-            para_index = i
-            break  # Stop after finding the first match
-
-    if para_index == -1:
-        print("No matching heading found.")
-        return None
-
-    # Search for the first table appearing after the heading
-    for table in doc.tables:
-        # Ensure the table appears after the heading
-        if any(para in table._element.iter() for para in doc.paragraphs[para_index:]):
-            target_table = table
-            break
-
-    if target_table is None:
-        print("No matching table found after the heading.")
-        return None
-
-    # Extract table content
-    table_data = []
-    for row in target_table.rows:
-        row_data = [cell.text.strip() for cell in row.cells]
-        table_data.append(row_data)
-
-    # Convert to DataFrame
-    df = pd.DataFrame(table_data)
-
-    # Extract protocol name and save as Excel file
-    protocol_name = os.path.splitext(os.path.basename(file_path))[0]
-    excel_filename = f"{protocol_name}.xlsx"
-    df.to_excel(excel_filename, index=False, header=False)
-    print(f"Table extracted and saved as: {excel_filename}")
-
-    return table_data
+    print(f"Document contains {len(doc.paragraphs)} paragraphs and {len(doc.tables)} tables")
+    
+    for i, paragraph in enumerate(doc.paragraphs):
+        print(f"Checking paragraph {i}: {paragraph.text[:50]}...")
+        
+        if table_label_pattern.search(paragraph.text):
+            print(f"Found matching heading at paragraph {i}")
+            found_heading = True
+            
+            remaining_elements = doc.paragraphs[i+1:] + doc.tables
+            
+            print(f"Processing {len(remaining_elements)} elements after heading")
+            
+            for element in remaining_elements:
+                if hasattr(element, 'rows'):
+                    print("Found a table after heading")
+                    table_data = []
+                    for row in element.rows:
+                        row_data = [cell.text.strip() for cell in row.cells]
+                        table_data.append(row_data)
+                    tables_data.append(table_data)
+                    print(f"Extracted table with {len(table_data)} rows")
+                    break
+    
+    if not found_heading:
+        print("No matching heading found in document")
+    
+    print(f"Returning {len(tables_data)} tables as JSON")
+    return json.dumps(tables_data, indent=2)
