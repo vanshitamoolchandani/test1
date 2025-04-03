@@ -2,11 +2,7 @@ import re
 from docx import Document
 
 def ArmCohortTableExtractor(file_path):
-    """
-    Extracts a table from a Word document that contains a label matching:
-    'Description of Intervention' or 'Description of Treatment'
-    The table's content is returned as a list of rows, with each row being a list of cell texts.
-    """
+
     # Open the document
     doc = Document(file_path)
     
@@ -16,34 +12,46 @@ def ArmCohortTableExtractor(file_path):
 , re.IGNORECASE)
     
     target_table = None
-    # Iterate over all tables in the document
+    heading_found = False
+
+    # Find the heading in the document
+    para_index = -1
+    for i, para in enumerate(doc.paragraphs):
+        text = para.text.strip()
+        if table_label_pattern.match(text):
+            print(f"Found heading: {text}")
+            heading_found = True
+            para_index = i
+            break  # Stop after finding the first match
+
+    if para_index == -1:
+        print("No matching heading found.")
+        return None
+
+    # Search for the first table appearing after the heading
     for table in doc.tables:
-        found = False
-        # Check each cell for the matching label
-        for row in table.rows:
-            for cell in row.cells:
-                if table_label_pattern.search(cell.text):
-                    found = True
-                    break
-            if found:
-                break
-        if found:
+        # Ensure the table appears after the heading
+        if any(para in table._element.iter() for para in doc.paragraphs[para_index:]):
             target_table = table
             break
-    
-    if target_table is None:
-        print("No matching table found.")
-        return None
-    
-    # Extract table content: each row is a list of cleaned cell texts.
-    table_content = []
-    for row in target_table.rows:
-        row_content = [cell.text.strip() for cell in row.cells]
-        table_content.append(row_content)
-    
-    return table_content
 
-# Example usage:
-# file_path = "path_to_your_document.docx"
-# table_data = ArmCohortTableExtractor(file_path)
-# print(table_data)
+    if target_table is None:
+        print("No matching table found after the heading.")
+        return None
+
+    # Extract table content
+    table_data = []
+    for row in target_table.rows:
+        row_data = [cell.text.strip() for cell in row.cells]
+        table_data.append(row_data)
+
+    # Convert to DataFrame
+    df = pd.DataFrame(table_data)
+
+    # Extract protocol name and save as Excel file
+    protocol_name = os.path.splitext(os.path.basename(file_path))[0]
+    excel_filename = f"{protocol_name}.xlsx"
+    df.to_excel(excel_filename, index=False, header=False)
+    print(f"Table extracted and saved as: {excel_filename}")
+
+    return table_data
