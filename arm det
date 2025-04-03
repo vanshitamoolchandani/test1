@@ -13,23 +13,26 @@ def TableExtractor(file_path):
     extracted_tables = {}
     paragraphs = doc.paragraphs
     tables = doc.tables
-    table_idx = 0  # Track the index of tables in the document
 
+    # Store indices of paragraphs that match the heading regex
+    matched_headings = []
+    
     for i, para in enumerate(paragraphs):
-        # Debug: Print the paragraph text
-        print(f"Paragraph {i}: {para.text}")
-        
         if table_label_pattern.search(para.text):  # If heading matches regex
-            table_name = para.text.strip()  # Use the heading as the table name
-            print(f"Found matching heading: {table_name}")
-            
-            if table_idx < len(tables):  # Ensure there's a table to extract
-                print(f"Extracting table {table_idx} for {table_name}")
-                extracted_tables[table_name] = extract_table_data(tables[table_idx])
-                table_idx += 1  # Move to the next table
-            else:
-                print(f"No more tables to extract after {table_name}")
+            matched_headings.append(i)
+            print(f"Found matching heading: {para.text.strip()} at paragraph {i}")
 
+    # Extract table data corresponding to matched headings
+    table_idx = 0  # Track which table to associate with the matched heading
+    for idx in matched_headings:
+        if table_idx < len(tables):
+            table_name = paragraphs[idx].text.strip()  # Use the heading as the table name
+            print(f"Extracting table for: {table_name}")
+            extracted_tables[table_name] = extract_table_data(tables[table_idx])
+            table_idx += 1  # Move to the next table
+        else:
+            print(f"No more tables to extract after {table_name}")
+    
     return extracted_tables
 
 
