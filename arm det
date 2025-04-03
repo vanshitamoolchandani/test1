@@ -1,45 +1,51 @@
-import re
-import json
-from docx import Document
-
 def TableExtractor(file_path):
     try:
-        table_label_pattern = re.compile(
-            r"(?:Table\s+[\dA-Za-z]+:\s*)?Description\s+of\s+(?:Study\s+Arms|Interventions|Treatment)(?:\s+.+)?",
-            re.IGNORECASE
-        )
-        
-        print(f"\nProcessing file: {file_path}")
-        doc = Document(file_path)
-        
-        # Create ordered list of all document elements
-        all_elements = []
-        for paragraph in doc.paragraphs:
-            all_elements.append(('paragraph', paragraph))
-        for table in doc.tables:
-            all_elements.append(('table', table))
-        
-        for i, (elem_type, element) in enumerate(all_elements):
-            if elem_type == 'paragraph' and table_label_pattern.search(element.text):
-                print(f"\nFound target heading at position {i}: {element.text[:100]}...")
-                
-                # Search for the next 10 elements after heading
-                for j in range(i+1, min(i+10, len(all_elements))):
-                    next_type, next_elem = all_elements[j]
-                    
-                    if next_type == 'table':
-                        print(f"\nExtracting table at position {j} after heading")
-                        table_data = []
-                        for row in next_elem.rows:
-                            row_data = [cell.text.strip() for cell in row.cells]
-                            table_data.append(row_data)
-                        return table_data
-                    elif next_type == 'paragraph' and next_elem.text.strip():
-                        print(f"Skipping paragraph at {j}: {next_elem.text[:50]}...")
-                
-        print("\nWarning: No matching table found after heading")
-        return None
-        
+        doc = docx.Document(file_path)
     except Exception as e:
-        print(f"\nError in TableExtractor: {str(e)}")
-        return None
+        print(f"Error reading the file: {e}")
+        return {}
+
+    table_label_pattern = re.compile(
+        r"(?:Table\s+[\dA-Za-z]+:\s*)?Description\s+of\s+(?:Study\s+Arms|Interventions|Treatment)(?:\s+.+)?",
+        re.IGNORECASE
+    )
+
+    extracted_tables = {}
+    paragraphs = doc.paragraphs
+    tables = doc.tables
+    table_idx = 0  # Track the index of tables in the document
+
+    for i, para in enumerate(paragraphs):
+        # Debug: Print the paragraph text
+        print(f"Paragraph {i}: {para.text}")
+        
+        if table_label_pattern.search(para.text):  # If heading matches regex
+            table_name = para.text.strip()  # Use the heading as the table name
+            print(f"Found matching heading: {table_name}")
+            
+            if table_idx < len(tables):  # Ensure there's a table to extract
+                print(f"Extracting table {table_idx} for {table_name}")
+                extracted_tables[table_name] = extract_table_data(tables[table_idx])
+                table_idx += 1  # Move to the next table
+            else:
+                print(f"No more tables to extract after {table_name}")
+
+    return extracted_tables
+
+
+def extract_table_data(table):
+    """Extracts data from a table and returns it as a list of dictionaries."""
+    data = []
+    headers = [cell.text.strip() for cell in table.rows[0].cells]  # Extract headers
+
+    # Debug: Print the headers
+    print(f"Table Headers: {headers}")
+
+    for row in table.rows[1:]:  # Skip header row
+        row_data = {headers[i]: row.cells[i].text.strip() for i in range(len(headers))}
+        data.append(row_data)
+
+        # Debug: Print the row data
+        print(f"Row data: {row_data}")
+
+    return data
