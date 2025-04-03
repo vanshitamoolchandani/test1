@@ -1,4 +1,5 @@
 def schemaExtarctor(file_path):
+        r'(?:\(?\s*(Arm|Cohort)\s+([\dA-Za-z]+)\s*\)?)(?::\s*(.*?))(?=\s*(?:\(?\s*(?:Arm|Cohort)\s+[\dA-Za-z]+\s*\)?|$))',
 
     schema_heading = re.compile(r"^\s*(\d+(\.\d+)*)?\s*Schema\s*$", re.IGNORECASE)
     doc = Document(file_path)
