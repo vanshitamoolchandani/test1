@@ -1,7 +1,8 @@
 import re
 import json
+from docx import Document
 
-def process_file(file_path):
+def process_docx(file_path):
     results = {
         'Inclusion_Criteria': {'total': 0, 'subpoints': {}, 'points': []},
         'Exclusion_Criteria': {'total': 0, 'subpoints': {}, 'points': []}
@@ -12,24 +13,27 @@ def process_file(file_path):
     current_parent = None
 
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
+        doc = Document(file_path)
+        paragraphs = doc.paragraphs
     except Exception as e:
-        print(f"Error opening file: {e}")
+        print(f"Error opening DOCX file: {e}")
         return json.dumps({"error": str(e)})
 
-    print("Starting file processing...")
+    print("Starting .docx file processing...")
 
-    for line in lines:
-        line = line.strip()
+    for para in paragraphs:
+        line = para.text.strip()
         print(f"Processing line: {line}")
+
+        if not line:
+            continue
 
         # Stop when Lifestyle considerations is encountered
         if "Lifestyle considerations" in line:
             print("Encountered 'Lifestyle considerations' heading. Stopping parsing.")
             break
 
-        # Detect headings
+        # Detect section headings
         if "Inclusion criteria" in line:
             current_section = "Inclusion_Criteria"
             headings_order.append("Inclusion criteria")
@@ -41,7 +45,7 @@ def process_file(file_path):
             print("Switched to Exclusion Criteria section.")
             continue
 
-        # Detect numbered bullets and subpoints
+        # Match bullets (numbered or sub-numbered)
         bullet_match = re.match(r'^(\d+(?:\.\d+)*)([.)])\s+(.*)', line)
         if bullet_match:
             bullet_num = bullet_match.group(1)
@@ -74,5 +78,5 @@ def process_file(file_path):
     return json.dumps(results, indent=4)
 
 # Example usage:
-# json_output = process_file("path/to/your/file.txt")
-# print(json_output)
+# output = process_docx("path/to/your/file.docx")
+# print(output)
