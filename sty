@@ -1,94 +1,1437 @@
-from docx import Document
-from docx.document import Document as _Document
-from docx.oxml.table import CT_Tbl
-from docx.oxml.text.paragraph import CT_P
-from docx.table import Table as _Table
-from docx.text.paragraph import Paragraph as _Paragraph
-import re
-
-def countExtractor(file_path):
-    """Extract style information for inclusion criteria section"""
-    def iter_block_items(parent):
-        if isinstance(parent, _Document):
-            parent_elm = parent.element.body
-        for child in parent_elm.iterchildren():
-            if isinstance(child, CT_P):
-                yield _Paragraph(child, parent)
-            elif isinstance(child, CT_Tbl):
-                yield _Table(child, parent)
-
-    
-def get_style_details(paragraph):
-    """Get detailed style information for a paragraph"""
-    style_info = {
-        'text': paragraph.text.strip(),
-        'style_name': paragraph.style.name if paragraph.style else None,
-        'is_list': False,
-        'list_level': None,
-        'numbering_format': None,
-        'is_table': False
-    }
-
-    # Check if paragraph has numbering properties
-    if paragraph._p.pPr is not None and paragraph._p.pPr.numPr is not None:
-        num_pr = paragraph._p.pPr.numPr
-        style_info['is_list'] = True
-        
-        # Get list level using explicit None check
-        ilvl = num_pr.ilvl
-        style_info['list_level'] = ilvl.val if ilvl is not None else 0
-        
-        try:
-            num_id = num_pr.numId.val
-            num = Document(file_path).part.numbering_part.numbering_definitions[num_id]
-            style_info['numbering_format'] = num.numStyleLink if num.numStyleLink else str(num.numFmt.val)
-        except Exception as e:
-            style_info['numbering_format'] = f'error: {str(e)}'
-
-    return style_info
-
-    try:
-        doc = Document(file_path)
-        styles_data = []
-        in_section = False
-
-        for block in iter_block_items(doc):
-            if isinstance(block, _Paragraph):
-                text = block.text.strip()
-                
-                if not in_section and "inclusion criteria" in text.lower():
-                    in_section = True
-                    continue
-                
-                if in_section:
-                    if block.style.name.startswith('Heading'):
-                        break
-                    style_info = get_style_details(block)
-                    styles_data.append(style_info)
-
-            elif isinstance(block, _Table) and in_section:
-                for row in block.rows:
-                    for cell in row.cells:
-                        styles_data.append({
-                            'text': cell.text.strip(),
-                            'style_name': 'Table Cell',
-                            'is_list': False,
-                            'list_level': None,
-                            'numbering_format': None,
-                            'is_table': True
-                        })
-
-        return styles_data
-
-    except Exception as e:
-        print(f"Error extracting styles: {str(e)}")
-        return []
-
-
-
-shita.m297@U-ZPD9CMFILJXN:~/Desktop/PS updated/Protocol-Scrapper$ python main.py
-/home/vanshita.m297/Desktop/PS updated/Protocol-Scrapper/utils/extract_data.py:1191: FutureWarning: Truth-testing of elements was a source of confusion and will always return True in future versions. Use specific 'len(elem)' or 'elem is not None' test instead.
-  if paragraph._p.pPr.numPr:
-/home/vanshita.m297/Desktop/PS updated/Protocol-Scrapper/utils/extract_data.py:1193: FutureWarning: Truth-testing of elements was a source of confusion and will always return True in future versions. Use specific 'len(elem)' or 'elem is not None' test instead.
-  style_info['list_level'] = paragraph._p.pPr.numPr.ilvl.val if paragraph._p.pPr.numPr.ilvl else 0
-complete
+{
+    "Title of Protocol": "A Phase 3 Randomized Study Comparing Talquetamab in Combination with Pomalidomide (Tal-P), Talquetamab in Combination with Teclistamab (Tal-Tec), and Investigator\u2019s Choice ofEither Elotuzumab, Pomalidomide, and Dexamethasone (EPd) or Pomalidomide, Bortezomib, and Dexamethasone (PVd) in Participants with Relapsed or Refractory Myeloma who Have Received 1 to 4 Prior Lines of Therapy Including an Anti-CD38 Antibody and Lenalidomide",
+    "logs": [
+        {
+            "text": "Each potential participant must satisfy all ofthe following criteria to be enrolled in the study:",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Age",
+            "style_name": "Heading 2",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Be \u226518 years ofage (or the legal age ofmajority in the jurisdiction in which the study is taking place, whichever is greater) at the time ofinformed consent.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Type of Participantand Disease Characteristic(s)",
+            "style_name": "Heading 2",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Documented multiple myeloma as defined by the criteria below:",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Multiple myeloma diagnosis according to the IMWG diagnostic criteria (Appendix 9).",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Measurable disease at screening as assessed by central laboratory, defined by any ofthe following:",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Serum M-protein level \u22650.5 g/dL (central laboratory);or",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 2,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Urine M-protein level \u2265200 mg/24 hours (central laboratory);or",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 2,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Light chain multiple myeloma without measurable M-protein in the serum or the urine: serum Ig FLC \u226510 mg/dL (central laboratory) and abnormal serum Ig kappa lambda FLC ratio (central laboratory) (see Appendix 9).",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 2,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "NOTE: All attempts should be made to determine eligibility ofthe participant based on the central laboratory results of screening blood and urine M-protein measurements. In exceptional circumstances and after discussion with and written approval by the sponsor, the local laboratory results of blood and urine M-protein measurements may be used to determine initial eligibility, but only ifthe results are clearly (ie, \u226525% or more) above the thresholds for measurability. In such cases, central laboratory results should still be obtained prior to the start of administration of study treatment in order to establish baseline values and confirm the results from the local laboratory.",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Relapsed or refractory disease as defined below:",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Relapsed disease is defined as an initial response to prior treatment, followed by confirmed PD by IMWG criteria >60 days after cessation oftreatment.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Refractory disease is defined as <25% reduction in M-protein or confirmed PD by IMWG criteria during previous treatment or \u226460 days after cessation of treatment.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Documented evidence of PD or failure to achieve a minimal response to the last line oftherapy based on investigator\u2019s determination ofresponse by IMWG criteria on or after their last regimen.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Have an ECOG performance status score of 0, 1, or 2 at screening and immediately prior to the start ofadministration ofstudy treatment.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Sex and Contraceptive/Barrier Requirements",
+            "style_name": "Heading 2",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "A POCBP must have a negative highly sensitive serum pregnancy test within",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "10 to 14 days prior to C1D1 and a further negative serum or urine pregnancy test within 24 hours prior to the start ofstudy treatment, and must agree to further urine or serum pregnancy tests during the study and within 6 months after receiving the last dose ofstudy treatment.",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "",
+            "style_name": "Normal",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "A participant must be (as defined in Appendix 4):",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Not ofchildbearing potential, or",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Ofchildbearing potential and",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Practicing true abstinence;or",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 2,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Practicing at least 2 reliable methods ofcontraception simultaneously, including one highly effective method ofcontraception and one other effective method ofcontraception (details in Appendix 4). Contraception must begin 4 weeks prior to dosing, continue during study treatment, including during dose interruptions, and through 6months after the last dose ofstudy treatment.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 2,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Reliable contraception is indicated even where there has been a history of infertility, unless due to hysterectomy or bilateral oophorectomy (Appendix 4).",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "NOTE: If a participant becomes of childbearing potential after start of the study they must comply with point (b) as described above. Ifa participant\u2019s reproductive status is questionable, additional evaluation should be considered.",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "NOTE: An interaction between hormonal contraception and talquetamab or teclistamab has not been formally studied. Therefore, it is unknown whether talquetamab or teclistamab may reduce the efficacy of the contraception method. If a participant is receiving talquetamab or teclistamab and is using hormonal contraceptives, an additional barrier method must be used.",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "NOTE: Sexual abstinence is considered a highly effective method only if defined as refraining from heterosexual intercourse during the entire period ofrisk associated with the study treatment. The reliability of sexual abstinence needs to be evaluated in relation to the duration of the study and the preferred and usual lifestyle of the participant.",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "A participant using PO contraceptives must use an additional contraceptive method (details in Appendix 4).",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "A participant must agree not to be pregnant, breastfeeding, or planning to become pregnant while enrolled in this study or within 6 months after the last dose ofstudy treatment.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "A participant must agree not to donate gametes (ova, oocytes, sperm) or freeze for future use for the purposes ofassisted reproduction during the study and for 6 months after receiving the last dose ofstudy treatment. Participants should consider preservation ofgametes prior to study treatment as anticancer treatments may impair fertility.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "A participant must wear a condom when engaging in any activity that allows for passage ofejaculate to another person during the study and for a minimum of 6months after receiving the last dose ofstudy treatment.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "NOTE: Ifthe participant\u2019s partner is a person ofchildbearing potential, the participant must use condoms (with or without spermicide) and the partner ofthe participant must also be practicing a highly effective method of contraception (see Appendix 4). A participant who is vasectomized must still use a condom (with or without spermicidal), but the partner is not required to use contraception.",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "A participant must agree not to plan to father a child while enrolled in this study or within 6months after the last dose ofstudy treatment.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "",
+            "style_name": "Normal",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Informed Consent",
+            "style_name": "Heading 2",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Must sign an ICF indicating that participant understands the purpose of, and procedures required for, the study and is willing to participate in the study. In certain circumstances, when it is determined that a potential research participant is cognitively impaired, has fluctuating or limited decision-making capacity or prospective incapacity, consent may be obtained from a legally authorized representative, ifpermitted by local regulations.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Must be willing and able to adhere to the lifestyle restrictions specified in this protocol (Section 5.3;including to not donate blood or blood components), including adherence to the global PPP or local PPP/REMS program for pomalidomide.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Prior Therapy Restrictions or Requirements",
+            "style_name": "Heading 2",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Received 1 to 4 prior lines ofantimyeloma therapy (Appendix 10) including a minimum of 2 consecutive cycles ofan anti-CD38 mAb at the dosing schedule (or minimum of 6doses ifanti- CD38 mAb was only part ofa maintenance regimen) in any prior line and 2 consecutive cycles oflenalidomide in any prior line.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "NOTE: Participants who have received only one prior line ofmyeloma therapy must be considered lenalidomide refractory (ie, have demonstrated PD by IMWG criteria on or within 60 days ofcompletion oflenalidomide-containing regimen). Participants who received \u22652 prior lines ofanti-myeloma therapy must be considered lenalidomide exposed.",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "NOTE: A single line oftherapy may consist of 1 or more agents and may include induction, hematopoietic stem cell transplantation, and maintenance therapy.",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Radiotherapy, bisphosphonate, or a single short course ofcorticosteroids (no more than the equivalent ofdexamethasone 40 mg/day for 4 days) would not be considered prior lines oftherapy.",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "",
+            "style_name": "Normal",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Clinical Laboratory Values",
+            "style_name": "Heading 2",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Have clinical laboratory values meeting the following criteria during the Screening Phase and within 72 hours ofthe first dose ofstudy treatment. If 1 or more criteria are not met",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "72 hours prior to dosing, one repeat oflaboratory testing is permitted.",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Table 13:\tAdequate Organ Function",
+            "style_name": "Normal",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Hematology",
+            "style_name": "Table Cell",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": true
+        },
+        {
+            "text": "Hematology",
+            "style_name": "Table Cell",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": true
+        },
+        {
+            "text": "Hemoglobin",
+            "style_name": "Table Cell",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": true
+        },
+        {
+            "text": "\uf0b3\uf038g/dL (\uf0b35 mmol/L;without transfusion support or erythropoietin use within 7 days before the laboratory test)",
+            "style_name": "Table Cell",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": true
+        },
+        {
+            "text": "Platelets",
+            "style_name": "Table Cell",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": true
+        },
+        {
+            "text": "\uf0b375\u00d7109/L in participants in whom <50% ofbone marrow nucleated cells are PCs and \uf0b350\u00d7109/L in participants in whom \u226550% ofbone marrow nucleated cells are PCs (without transfusion support or thrombopoietin receptor agonist within 7 days before the laboratory test)",
+            "style_name": "Table Cell",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": true
+        },
+        {
+            "text": "ANC",
+            "style_name": "Table Cell",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": true
+        },
+        {
+            "text": "\uf0b31\u00d7109/L (prior growth factor support is permitted but must be without support for 7 days for G-CSF or GM-CSF and for 14 days for pegylated G-CSF before the laboratory test)",
+            "style_name": "Table Cell",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": true
+        },
+        {
+            "text": "Chemistry",
+            "style_name": "Table Cell",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": true
+        },
+        {
+            "text": "Chemistry",
+            "style_name": "Table Cell",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": true
+        },
+        {
+            "text": "AST and ALT",
+            "style_name": "Table Cell",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": true
+        },
+        {
+            "text": "\u22642.5\u00d7ULN",
+            "style_name": "Table Cell",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": true
+        },
+        {
+            "text": "eGFR",
+            "style_name": "Table Cell",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": true
+        },
+        {
+            "text": "\u226530 mL/min based on Modified Diet in Renal Disease 4-variable formula calculation (see Appendix 11) or creatinine clearance measured by a\n24-hour urine collection",
+            "style_name": "Table Cell",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": true
+        },
+        {
+            "text": "Total bilirubin",
+            "style_name": "Table Cell",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": true
+        },
+        {
+            "text": "\u22642\u00d7ULN;except in participants with congenital bilirubinemia, such as congenital nonhemolytic hyperbilirubinemia (in which case direct bilirubin\n\u22641.5\u00d7ULN is required)",
+            "style_name": "Table Cell",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": true
+        },
+        {
+            "text": "Serum calcium corrected for albumin",
+            "style_name": "Table Cell",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": true
+        },
+        {
+            "text": "\u226414 mg/dL (\u22643.5 mmol/L) or free ionized calcium \u22646.5 mg/dL (\u22641.6 mmol/L;see Appendix 12)",
+            "style_name": "Table Cell",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": true
+        },
+        {
+            "text": "",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "HIV-positive participants are eligible ifthey meet all ofthe following:",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "No detectable viral load (ie, <50 copies/mL) at screening",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "CD4+ count >300 cells/mm3 at screening",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "No AIDS-defining opportunistic infection within 6 months ofscreening",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Receiving HAART. Any changes in HAART due to resistance/progression should occur at least 3 months prior to screening. A change in HAART due to toxicity is allowed up to 4 weeks prior to screening.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "NOTE: HAART that could interfere with study treatment is excluded (consult the sponsor for a review ofmedications prior to enrollment).",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Exclusion Criteria",
+            "style_name": "Heading 2",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Any potential participant who meets any of the following criteria will be excluded from participating in the study:",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Medical Conditions",
+            "style_name": "Heading 2",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Contraindications or life-threatening allergies, hypersensitivity, or intolerance to any study drug or its excipients (refer to the talquetamab IB, teclistamab IB, and",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "",
+            "style_name": "Normal",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "appropriate prescribing information). Additional exclusion criteria pertaining to specific study drugs include:",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "GPRCD5-directed therapy or pomalidomide.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "A participant is not eligible to receive PVd in Arm C ifany ofthe following are applicable:",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Does not meet criteria for bortezomib retreatment (failure to achieve at least PR to prior bortezomib treatment, or progression by IMWG criteria on therapy or within 6 months after cessation ofprior bortezomib treatment)",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 2,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Intolerance, defined as prior therapy discontinued due to any AE related to bortezomib",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 2,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Grade 1 peripheral neuropathy with pain or Grade \u22652 peripheral neuropathy as defined by NCI-CTCAE Version 5.0",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 2,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Received a strong CYP3A4 inducer (see Section 6.9.3.3) within 5 half-lives prior to randomization.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 2,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "A participant is not eligible to receive EPd (Arm C) ifthey have received prior elotuzumab therapy.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Received prior teclistamab therapy.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Participants with history ofmultiple myeloma that is refractory to any T-cell-redirected therapy per IMWG diagnostic criteria (Appendix 9).",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Stroke, transient ischemic attack, or seizure within 6 months prior to signing ICF.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Presence ofthe following cardiac conditions:",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "NYHA Class III or IV congestive heart failure (see Appendix 19)",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Myocardial infarction or coronary artery bypass graft \u22646 months prior to randomization",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "History ofclinically significant ventricular arrhythmia or unexplained syncope, not believed to be vasovagal in nature or due to dehydration",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "History ofsevere non-ischemic cardiomyopathy.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Major surgery or had significant traumatic injury within 2 weeks prior to the start of administration ofstudy treatment, or will not have fully recovered from surgery, or has major surgery planned during the time the participant is expected to be treated in the study or within 2 weeks after administration ofthe last dose ofstudy treatment. NOTE: Participants with planned surgical procedures to be conducted under local anesthesia may participate. Kyphoplasty or vertebroplasty are not considered major surgery. Ifthere is a question whether a procedure is considered a major surgery, the investigator must consult with the appropriate sponsor representative and resolve any issues before enrolling a participant in the study.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "",
+            "style_name": "Normal",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Concurrent medical or psychiatric condition or disease that is likely to interfere with study procedures or results, or that in the opinion ofthe investigator would constitute a hazard for participating in this study, such as:",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Acute diffuse infiltrative pulmonary disease.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Evidence ofactive systemic viral, fungal, or bacterial infection, requiring systemic antimicrobial therapy.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Active autoimmune disease requiring systemic immunosuppressive therapy within 6 months before start ofstudy treatment. EXCEPTION: Participants with vitiligo, controlled type I diabetes, and prior autoimmune thyroiditis that is currently euthyroid based on clinical symptoms and laboratory testing are eligible regardless ofwhen these conditions were diagnosed.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Disabling psychiatric conditions (eg, alcohol or drug abuse), severe dementia, or altered mental status.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Any other issue that would impair the ability ofthe participant to receive or tolerate the planned treatment at the investigational site, to understand informed consent or any condition for which, in the opinion ofthe investigator, participation would not be in the best interest ofthe participant",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "(eg, compromise the well-being) or that could prevent, limit, or confound the protocol-specified assessments.",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "History ofnoncompliance with recommended medical treatments.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Prior/ConcomitantTherapy",
+            "style_name": "Heading 2",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Prior or concurrent exposure to any ofthe following, in the specified time frame prior to randomization:",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "T-cell redirection therapy (eg, antibody therapy or BiTEs) within 3 months.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Gene-modified adoptive cell therapy (eg, CAR-T cells, NK cells) within 3 months.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Targeted therapy, epigenetic therapy, mAb therapy, cytotoxic therapy, or treatment with an investigational drug or an invasive investigational medical device within 21 days or \u22655 half-lives, whichever is less.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Investigational vaccine other than SARS-CoV-2 vaccine approved or authorized for emergency use within 4 weeks.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Live, attenuated vaccine within 4 weeks. Non-live and non-replicating vaccines approved or authorized for emergency use (eg, COVID-19) by local health authorities are allowed.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "PI therapy within 14 days.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "IMiD agent therapy within 14 days.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Focal radiation within 7 days.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Received either ofthe following:",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "An allogeneic stem cell transplantation within 6 months before the first dose of study treatment. Participants who received an allogeneic transplant must be off all immunosuppressive medications during the 6 weeks before the start ofstudy treatment administration without signs ofgraft-versus-host disease.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "An autologous stem cell transplantation within 12 weeks before the start of study treatment administration.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "A maximum cumulative dose ofcorticosteroids of\u2265140 mg ofprednisone or equivalent within 14-day period before the first dose ofstudy drug (does not include pretreatment medications;Appendix 13).",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "",
+            "style_name": "Normal",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Diagnostic Assessments",
+            "style_name": "Heading 2",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Any ofthe following:",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Hepatitis B infection (ie, HbsAg or HBV-DNA positive): In the event the infection status is unclear, quantitative viral levels are necessary to determine the infection status. See Section 8.3.5 for further required assessments.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Active hepatitis C infection as measured by positive HCV-RNA testing. Participants with a history of HCV antibody positivity must undergo",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "HCV-RNA testing. Ifa participant with history ofchronic hepatitis C infection (defined as both HCV antibody and HCV-RNA positive) completed antiviral therapy and has undetectable HCV-RNA for at least 12 weeks following the completion oftherapy, the participant is eligible for the study.",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Other Exclusions",
+            "style_name": "Heading 2",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Not applicable.",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Disease Characteristics",
+            "style_name": "Heading 2",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Known active CNS involvement or exhibits clinical signs ofmeningeal involvement of multiple myeloma. Ifeither is suspected, negative whole brain MRI and lumbar cytology are required.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "PC leukemia at the time ofscreening, Waldenstr\u00f6m\u2019s macroglobulinemia, POEMS syndrome (polyneuropathy, organomegaly, endocrinopathy, M-protein, and skin changes), or primary amyloid light chain amyloidosis.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Any ofthe following:",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Ongoing myelodysplastic syndrome or B cell malignancy (other than multiple myeloma).",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Any history ofmalignancy, other than multiple myeloma, which is considered at high risk ofrecurrence requiring systemic therapy.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Any active malignancy (ie, progressing or requiring treatment change in the last 24 months) other than multiple myeloma. The only allowed exceptions are malignancies treated within the last 24 months that are considered cured:",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Non-muscle invasive bladder cancer (solitary Ta-PUN-LMP or low grade,",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 2,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "<3 cm, no CIS)",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Non-melanoma skin cancers treated with curative therapy or localized melanoma treated with curative surgical resection alone",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 2,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Non-invasive cervical cancer",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 2,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Breast cancer: adequately treated lobular carcinoma in situ or ductal carcinoma in situ or history oflocalized breast cancer (antihormonal therapy is permitted)",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 2,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Localized prostate cancer (M0, N0) with a Gleason Score \u22647a, treated locally only (RP/RT/focal treatment)",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 2,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Other malignancy that is considered cured with minimal risk ofrecurrence in consultation with the sponsor\u2019s medical monitor.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 2,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "NOTE:In the event ofany questions, consult with the sponsor\u2019s medical monitor prior to enrolling a participant.",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Note:Investigators must ensure that all study enrollment criteria have been met at screening. Ifa participant\u2019s clinical status changes (including any available laboratory results or receipt of",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "",
+            "style_name": "Normal",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "additional medical records) after screening but before the first dose of study treatment is given such that the participant no longer meets all eligibility criteria, then the participant must be excluded from participation in the study. Section 5.4, describes options for retesting. The required source documentation to support meeting the enrollment criteria are noted in Appendix 2.",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Lifestyle Considerations",
+            "style_name": "Heading 2",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Potential participants must be willing and able to adhere to the following lifestyle restrictions during the study to be eligible for participation:",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Refer to Section 6.9 and subsections therein for details regarding prohibited and restricted therapy during the study.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Agree to follow all requirements that must be met during the study as noted in the Inclusion and Exclusion Criteria (Sections 5.1 and 5.2) and the relevant SoA (Section 1.3).",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Carry a \u201cwallet study card\u201d with pertinent information about the study for the duration ofstudy participation.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Participants in Arm A (Tal-P) and Arm B (Tal-Tec)",
+            "style_name": "Heading 2",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Agree not to donate blood during therapy following local regulations",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Be willing to be hospitalized or remain in close proximity (within 30 minutes) to the hospital starting after step-up dose 1 until 48 hours after administration ofthe first treatment dose oftalquetamab or teclistamab, as described in Section 6.1.3.1.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Be willing to be hospitalized for administration oftalquetamab or teclistamab following specified AEs, as described in Section 6.1.3.1.1.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Agree to self-monitor for signs and symptoms of CRS (such as fever) and ICANS and to seek immediate medical intervention ifrequired. In particular, ifreceiving outpatient talquetamab/teclistamab administration, to be able to self-monitor body temperature (via preferred method ofmeasurement) at least twice daily (at intervals \u22658 hours apart) and record in a temperature diary, from after step-up dose 1 until 48 hours after administration ofthe first treatment dose;and accept safety follow-up phone call(s) from the study site to report temperature or any AEs, as applicable.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Be willing to avoid driving or operating heavy or potentially dangerous machinery starting after step-up dose 1 until 48 hours after administration ofthe first treatment dose oftalquetamab and teclistamab.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Participants in Arm A (Tal-P) and Arm C (EPd and PVd options)",
+            "style_name": "Heading 2",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Due to the embryo-fetal risk associated with IMiDs, all participants must adhere to the global PPP or local PPP/REMS program for pomalidomide.",
+            "style_name": "List Paragraph",
+            "is_list": true,
+            "list_level": 0,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Screen Failures",
+            "style_name": "Heading 2",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "ParticipantIdentification, Enrollment, and Screening Logs",
+            "style_name": "Normal",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "The investigator agrees to complete a participant identification and enrollment log to permit easy identification of each participant during and after the study. This document will be reviewed by the sponsor study site contact for completeness. This study will use IWRS. The investigator will",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "",
+            "style_name": "Normal",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "not generate screening and enrollment logs directly from IWRS. Any deviations from the use of sponsor screening and enrollment logs require sponsor review and approval.",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "The participant identification and enrollment log will be treated as confidential and will be filed by the investigator in the study file. To ensure participant confidentiality, no copy will be made. All reports and communications relating to the study will identify participants by participant identification and age at initial informed consent. In cases where the participant is not randomized into the study, the date seen and age at initial informed consent will be used.",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Participants who fail to meet the inclusion and exclusion criteria (ie, screen failures) may be rescreened once iftheir condition changes. Rescreening must be discussed with and approved by the sponsor on a case-by-case basis. Participants who are determined to be eligible for rescreening must sign a new ICF and will then be assigned a new participant number.",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        },
+        {
+            "text": "Criteria for Temporarily Delaying Administration of Study Treatment",
+            "style_name": "Heading 2",
+            "is_list": true,
+            "list_level": 1,
+            "numbering_format": "error: '_NumberingDefinitions' object is not subscriptable",
+            "is_table": false
+        },
+        {
+            "text": "Dose delay/interruption is the primary method for managing talquetamab- and teclistamab-related toxicities. Toxicities requiring dose delay as well as procedures for delay are outlined in Section 6.6.",
+            "style_name": "Body Text",
+            "is_list": false,
+            "list_level": null,
+            "numbering_format": null,
+            "is_table": false
+        }
+    ]
+}
