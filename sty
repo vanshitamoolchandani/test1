@@ -17,29 +17,35 @@ def countExtractor(file_path):
             elif isinstance(child, CT_Tbl):
                 yield _Table(child, parent)
 
-    def get_style_details(paragraph):
-        """Get detailed style information for a paragraph"""
-        style_info = {
-            'text': paragraph.text.strip(),
-            'style_name': paragraph.style.name if paragraph.style else None,
-            'is_list': False,
-            'list_level': None,
-            'numbering_format': None,
-            'is_table': False
-        }
+    
+def get_style_details(paragraph):
+    """Get detailed style information for a paragraph"""
+    style_info = {
+        'text': paragraph.text.strip(),
+        'style_name': paragraph.style.name if paragraph.style else None,
+        'is_list': False,
+        'list_level': None,
+        'numbering_format': None,
+        'is_table': False
+    }
 
-        if paragraph._p.pPr is not None:
-            if paragraph._p.pPr.numPr:
-                style_info['is_list'] = True
-                style_info['list_level'] = paragraph._p.pPr.numPr.ilvl.val if paragraph._p.pPr.numPr.ilvl else 0
-                try:
-                    num_id = paragraph._p.pPr.numPr.numId.val
-                    num = Document(file_path).part.numbering_part.numbering_definitions[num_id]
-                    style_info['numbering_format'] = num.numStyleLink if num.numStyleLink else str(num.numFmt.val)
-                except:
-                    style_info['numbering_format'] = 'unknown'
+    # Check if paragraph has numbering properties
+    if paragraph._p.pPr is not None and paragraph._p.pPr.numPr is not None:
+        num_pr = paragraph._p.pPr.numPr
+        style_info['is_list'] = True
+        
+        # Get list level using explicit None check
+        ilvl = num_pr.ilvl
+        style_info['list_level'] = ilvl.val if ilvl is not None else 0
+        
+        try:
+            num_id = num_pr.numId.val
+            num = Document(file_path).part.numbering_part.numbering_definitions[num_id]
+            style_info['numbering_format'] = num.numStyleLink if num.numStyleLink else str(num.numFmt.val)
+        except Exception as e:
+            style_info['numbering_format'] = f'error: {str(e)}'
 
-        return style_info
+    return style_info
 
     try:
         doc = Document(file_path)
