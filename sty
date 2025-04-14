@@ -77,3 +77,12 @@ def countExtractor(file_path):
     except Exception as e:
         print(f"Error extracting styles: {str(e)}")
         return []
+
+
+
+shita.m297@U-ZPD9CMFILJXN:~/Desktop/PS updated/Protocol-Scrapper$ python main.py
+/home/vanshita.m297/Desktop/PS updated/Protocol-Scrapper/utils/extract_data.py:1191: FutureWarning: Truth-testing of elements was a source of confusion and will always return True in future versions. Use specific 'len(elem)' or 'elem is not None' test instead.
+  if paragraph._p.pPr.numPr:
+/home/vanshita.m297/Desktop/PS updated/Protocol-Scrapper/utils/extract_data.py:1193: FutureWarning: Truth-testing of elements was a source of confusion and will always return True in future versions. Use specific 'len(elem)' or 'elem is not None' test instead.
+  style_info['list_level'] = paragraph._p.pPr.numPr.ilvl.val if paragraph._p.pPr.numPr.ilvl else 0
+complete
