@@ -1,0 +1,64 @@
+def extract_inclusion_section():
+    """Extract text from Inclusion Criteria section with enhanced style debugging"""
+    print("[DEBUG] Starting section extraction")
+    doc = Document(file_path)
+    in_section = False
+    inclusion_text = []
+    
+    for block in iter_block_items(doc):
+        if isinstance(block, _Paragraph):
+            text = block.text.strip()
+            style = block.style.name if block.style else None
+            
+            # New: Extract detailed list formatting
+            list_type = "None"
+            numbering = "None"
+            if block._p.pPr is not None:
+                if block._p.pPr.numPr:
+                    # Get numbering ID and level
+                    num_id = block._p.pPr.numPr.numId.val
+                    ilvl = block._p.pPr.numPr.ilvl.val if block._p.pPr.numPr.ilvl else 0
+                    list_type = f"List (numId={num_id}, level={ilvl})"
+                    
+                    # Try to get numbering format
+                    try:
+                        num = doc.part.numbering_part.numbering_definitions[num_id]
+                        numbering = num.numStyleLink if num.numStyleLink else num.numFmt.val
+                    except:
+                        numbering = "Unknown"
+            
+            print(f"\n[DEBUG] Paragraph: '{text}'")
+            print(f"  - Style: {style}")
+            print(f"  - List Type: {list_type}")
+            print(f"  - Numbering Format: {numbering}")
+
+            if not in_section and "inclusion criteria" in text.lower():
+                print("[DEBUG] Found inclusion criteria heading!")
+                in_section = True
+                continue
+            
+            if in_section and style and style.startswith('Heading'):
+                print("[DEBUG] Exit trigger - new heading found")
+                break
+            
+            if in_section:
+                print("[DEBUG] Adding to inclusion text")
+                inclusion_text.append({
+                    'text': text,
+                    'style': style,
+                    'list_type': list_type,
+                    'numbering': numbering
+                })
+                
+        elif isinstance(block, _Table) and in_section:
+            print("\n[DEBUG] Table found in inclusion section")
+            for row in block.rows:
+                for cell in row.cells:
+                    cell_text = cell.text.strip()
+                    print(f"[DEBUG] Table cell content: '{cell_text}'")
+                    inclusion_text.append({'text': cell_text, 'style': 'Table Cell'})
+    
+    print("\n[DEBUG] Final inclusion text structure:")
+    for idx, item in enumerate(inclusion_text, 1):
+        print(f"{idx:2}. {item}")
+    return inclusion_text
