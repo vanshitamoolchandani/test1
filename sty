@@ -1,64 +1,79 @@
-def extract_inclusion_section():
-    """Extract text from Inclusion Criteria section with enhanced style debugging"""
-    print("[DEBUG] Starting section extraction")
-    doc = Document(file_path)
-    in_section = False
-    inclusion_text = []
-    
-    for block in iter_block_items(doc):
-        if isinstance(block, _Paragraph):
-            text = block.text.strip()
-            style = block.style.name if block.style else None
-            
-            # New: Extract detailed list formatting
-            list_type = "None"
-            numbering = "None"
-            if block._p.pPr is not None:
-                if block._p.pPr.numPr:
-                    # Get numbering ID and level
-                    num_id = block._p.pPr.numPr.numId.val
-                    ilvl = block._p.pPr.numPr.ilvl.val if block._p.pPr.numPr.ilvl else 0
-                    list_type = f"List (numId={num_id}, level={ilvl})"
-                    
-                    # Try to get numbering format
-                    try:
-                        num = doc.part.numbering_part.numbering_definitions[num_id]
-                        numbering = num.numStyleLink if num.numStyleLink else num.numFmt.val
-                    except:
-                        numbering = "Unknown"
-            
-            print(f"\n[DEBUG] Paragraph: '{text}'")
-            print(f"  - Style: {style}")
-            print(f"  - List Type: {list_type}")
-            print(f"  - Numbering Format: {numbering}")
+from docx import Document
+from docx.document import Document as _Document
+from docx.oxml.table import CT_Tbl
+from docx.oxml.text.paragraph import CT_P
+from docx.table import Table as _Table
+from docx.text.paragraph import Paragraph as _Paragraph
+import re
 
-            if not in_section and "inclusion criteria" in text.lower():
-                print("[DEBUG] Found inclusion criteria heading!")
-                in_section = True
-                continue
-            
-            if in_section and style and style.startswith('Heading'):
-                print("[DEBUG] Exit trigger - new heading found")
-                break
-            
-            if in_section:
-                print("[DEBUG] Adding to inclusion text")
-                inclusion_text.append({
-                    'text': text,
-                    'style': style,
-                    'list_type': list_type,
-                    'numbering': numbering
-                })
+def countExtractor(file_path):
+    """Extract style information for inclusion criteria section"""
+    def iter_block_items(parent):
+        if isinstance(parent, _Document):
+            parent_elm = parent.element.body
+        for child in parent_elm.iterchildren():
+            if isinstance(child, CT_P):
+                yield _Paragraph(child, parent)
+            elif isinstance(child, CT_Tbl):
+                yield _Table(child, parent)
+
+    def get_style_details(paragraph):
+        """Get detailed style information for a paragraph"""
+        style_info = {
+            'text': paragraph.text.strip(),
+            'style_name': paragraph.style.name if paragraph.style else None,
+            'is_list': False,
+            'list_level': None,
+            'numbering_format': None,
+            'is_table': False
+        }
+
+        if paragraph._p.pPr is not None:
+            if paragraph._p.pPr.numPr:
+                style_info['is_list'] = True
+                style_info['list_level'] = paragraph._p.pPr.numPr.ilvl.val if paragraph._p.pPr.numPr.ilvl else 0
+                try:
+                    num_id = paragraph._p.pPr.numPr.numId.val
+                    num = Document(file_path).part.numbering_part.numbering_definitions[num_id]
+                    style_info['numbering_format'] = num.numStyleLink if num.numStyleLink else str(num.numFmt.val)
+                except:
+                    style_info['numbering_format'] = 'unknown'
+
+        return style_info
+
+    try:
+        doc = Document(file_path)
+        styles_data = []
+        in_section = False
+
+        for block in iter_block_items(doc):
+            if isinstance(block, _Paragraph):
+                text = block.text.strip()
                 
-        elif isinstance(block, _Table) and in_section:
-            print("\n[DEBUG] Table found in inclusion section")
-            for row in block.rows:
-                for cell in row.cells:
-                    cell_text = cell.text.strip()
-                    print(f"[DEBUG] Table cell content: '{cell_text}'")
-                    inclusion_text.append({'text': cell_text, 'style': 'Table Cell'})
-    
-    print("\n[DEBUG] Final inclusion text structure:")
-    for idx, item in enumerate(inclusion_text, 1):
-        print(f"{idx:2}. {item}")
-    return inclusion_text
+                if not in_section and "inclusion criteria" in text.lower():
+                    in_section = True
+                    continue
+                
+                if in_section:
+                    if block.style.name.startswith('Heading'):
+                        break
+                    style_info = get_style_details(block)
+                    styles_data.append(style_info)
+
+            elif isinstance(block, _Table) and in_section:
+                for row in block.rows:
+                    for cell in row.cells:
+                        styles_data.append({
+                            'text': cell.text.strip(),
+                            'style_name': 'Table Cell',
+                            'is_list': False,
+                            'list_level': None,
+                            'numbering_format': None,
+                            'is_table': True
+                        })
+
+        return styles_data
+
+    except Exception as e:
+        print(f"Error extracting styles: {str(e)}")
+        return []
