@@ -6,6 +6,7 @@ from docx.oxml.table import CT_Tbl
 from docx.oxml.text.paragraph import CT_P
 from docx.table import Table as _Table
 from docx.text.paragraph import Paragraph as _Paragraph
+
 def countExtractor(file_path):
     """Extract style information for inclusion criteria section"""
     def iter_block_items(parent):
@@ -16,7 +17,7 @@ def countExtractor(file_path):
                 yield _Paragraph(child, parent)
             elif isinstance(child, CT_Tbl):
                 yield _Table(child, parent)
-    
+
     def get_style_details(paragraph):
         """Get detailed style information for a paragraph"""
         style_info = {
@@ -27,23 +28,23 @@ def countExtractor(file_path):
             'numbering_format': None,
             'is_table': False
         }
-  
+
         # Check if paragraph has numbering properties
         if paragraph._p.pPr is not None and paragraph._p.pPr.numPr is not None:
             num_pr = paragraph._p.pPr.numPr
             style_info['is_list'] = True
-          
+
             # Get list level using explicit None check
             ilvl = num_pr.ilvl
             style_info['list_level'] = ilvl.val if ilvl is not None else 0
-          
+
             try:
                 num_id = num_pr.numId.val
                 num = Document(file_path).part.numbering_part.numbering_definitions[num_id]
                 style_info['numbering_format'] = num.numStyleLink if num.numStyleLink else str(num.numFmt.val)
             except Exception as e:
                 style_info['numbering_format'] = f'error: {str(e)}'
-  
+
         return style_info
 
     try:
@@ -57,34 +58,47 @@ def countExtractor(file_path):
         main_point_index = 0
         current_main_point = None
 
+        print("Starting processing document...")
+
         for block in iter_block_items(doc):
+            print("Processing a block...")  # Debug: Indicate a block is being processed
             if isinstance(block, _Paragraph):
                 text = block.text.strip()
-                
+                print(f"Paragraph text: {text}")  # Debug: Print paragraph text
+
                 if not inclusion_criteria_found and "inclusion criteria" in text.lower():
                     inclusion_criteria_found = True
                     in_section = True
+                    print("Inclusion criteria section found.")
                     continue
-                
+
                 if in_section:
                     if "excluding criteria" in text.lower() or block.style.name.startswith('Heading'):
+                        print("Exclusion criteria or heading encountered.  Breaking section processing.")
                         break
 
                     style_info = get_style_details(block)
                     styles_data.append(style_info)
+                    print(f"Style info: {style_info}") # Debug: show style info
 
                     if style_info['style_name'] == 'List Paragraph' and style_info['list_level'] == 0:
                         main_point_index += 1
                         inclusion_data[str(main_point_index)] = 0
                         current_main_point = str(main_point_index)
+                        print(f"New main point found: {current_main_point}")
                     elif style_info['style_name'] == 'List Paragraph' and style_info['list_level'] == 1:
                         if current_main_point:
                             if re.match(r"^\s*[\dA-Za-z][\.\)]", text):
                                 inclusion_data[current_main_point] += 1
+                                print(f"Subpoint counted for main point {current_main_point}")
+                            else:
+                                print(f"Subpoint ignored (no number/letter bullet): {text}")
+                    else:
+                        print("Paragraph ignored (not a relevant list paragraph)")
 
             elif isinstance(block, _Table) and in_section:
                 table_found = True
-                
+                print("Table found in inclusion criteria section.")
 
         output = {}
         total_main_points = main_point_index
@@ -92,6 +106,7 @@ def countExtractor(file_path):
         if table_found:
             output["Inclusion Criteria"]["table_found"] = True
 
+        print("Finished processing document.")
         return output
 
     except Exception as e:
