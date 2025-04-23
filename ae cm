@@ -1,0 +1,78 @@
+import json
+import os
+
+def load_json(file_path):
+    if not os.path.exists(file_path):
+        print(f"[LOAD] File not found: {file_path}")
+        return {}
+    with open(file_path, "r") as f:
+        data = json.load(f)
+        print(f"[LOAD] Loaded data from {file_path}")
+        return data
+
+def save_json(file_path, data):
+    with open(file_path, "w") as f:
+        json.dump(data, f, indent=4)
+    print(f"[SAVE] Saved updated data to {file_path}")
+
+def validate_and_update_entities(mh_file, cm_file, ae_file, mapping_file):
+    print("\n[INFO] Starting entity validation and update...")
+
+    # Load all JSON data
+    mh_data = load_json(mh_file)
+    cm_data = load_json(cm_file)
+    ae_data = load_json(ae_file)
+    mapping_data = load_json(mapping_file)
+
+    updated = False
+
+    extractor = mapping_data.get("mh_cm_ae_extractor", {})
+    print(f"[DEBUG] Extractor content: {extractor}")
+
+    medications = extractor.get("medication", [])
+    diseases = extractor.get("Disease", [])
+
+    print(f"[CHECK] Medications to validate: {medications}")
+    print(f"[CHECK] Diseases to validate: {diseases}")
+
+    # Update CM with medications if missing
+    for med in medications:
+        if med not in cm_data.get("CM", []):
+            print(f"[UPDATE] Adding medication '{med}' to CM")
+            cm_data.setdefault("CM", []).append(med)
+            updated = True
+        else:
+            print(f"[SKIP] Medication '{med}' already in CM")
+
+    # Update AE or MH with diseases if missing
+    for dis in diseases:
+        if dis not in ae_data.get("AE", []) and dis not in mh_data.get("MH", []):
+            print(f"[UPDATE] Adding disease '{dis}' to AE")
+            ae_data.setdefault("AE", []).append(dis)
+            updated = True
+        else:
+            print(f"[SKIP] Disease '{dis}' already present in AE or MH")
+
+    if updated:
+        save_json(cm_file, cm_data)
+        save_json(ae_file, ae_data)
+        print("[RESULT] CM or AE files were updated.")
+    else:
+        print("[RESULT] No updates were necessary.")
+
+    print("[INFO] Entity validation and update complete.\n")
+
+
+
+
+
+# Path to the merged mapping JSON for validation
+mapping_file_path = os.path.join(output_dir, "mh_cm_ae.json")
+
+# Call the validator
+validate_and_update_entities(
+    mh_file=os.path.join(output_dir, "MH.json"),
+    cm_file=os.path.join(output_dir, "CM.json"),
+    ae_file=os.path.join(output_dir, "AE.json"),
+    mapping_file=mapping_file_path
+)
