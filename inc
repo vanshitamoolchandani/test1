@@ -18,34 +18,46 @@ def countExtractor(file_path):
             elif isinstance(child, CT_Tbl):
                 yield _Table(child, parent)
 
-    def get_style_details(paragraph):
-        """Get detailed style information for a paragraph"""
-        style_info = {
-            'text': paragraph.text.strip(),
-            'style_name': paragraph.style.name if paragraph.style else None,
-            'is_list': False,
-            'list_level': None,
-            'numbering_format': None,
-            'is_table': False
-        }
 
-        # Check if paragraph has numbering properties
-        if paragraph._p.pPr is not None and paragraph._p.pPr.numPr is not None:
-            num_pr = paragraph._p.pPr.numPr
-            style_info['is_list'] = True
+def get_style_details(paragraph, doc):
+    style_info = {
+        'text': paragraph.text.strip(),
+        'style_name': paragraph.style.name if paragraph.style else None,
+        'is_list': False,
+        'list_level': None,
+        'numbering_format': None,
+        'is_table': False
+    }
 
-            # Get list level using explicit None check
-            ilvl = num_pr.ilvl
-            style_info['list_level'] = ilvl.val if ilvl is not None else 0
+    # Check if paragraph is part of a list
+    if paragraph._p.pPr is not None and paragraph._p.pPr.numPr is not None:
+        num_pr = paragraph._p.pPr.numPr
+        style_info['is_list'] = True
 
-            try:
-                num_id = num_pr.numId.val
-                num = Document(file_path).part.numbering_part.numbering_definitions[num_id]
-                style_info['numbering_format'] = num.numStyleLink if num.numStyleLink else str(num.numFmt.val)
-            except Exception as e:
-                style_info['numbering_format'] = f'error: {str(e)}'
+        # List level (ilvl)
+        ilvl = num_pr.ilvl
+        style_info['list_level'] = int(ilvl.val) if ilvl is not None else 0
 
-        return style_info
+        try:
+            num_id = num_pr.numId.val
+            numbering = doc.part.numbering_part.numbering_definitions._numbering
+            abstract_num_id = None
+            for num in numbering.findall('.//w:num', numbering.nsmap):
+                if int(num.find('w:numId', numbering.nsmap).get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')) == num_id:
+                    abstract_num_id = num.find('w:abstractNumId', numbering.nsmap).get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')
+                    break
+
+            if abstract_num_id:
+                for abstract in numbering.findall('.//w:abstractNum', numbering.nsmap):
+                    if abstract.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}abstractNumId') == abstract_num_id:
+                        num_fmt = abstract.find('.//w:numFmt', numbering.nsmap)
+                        style_info['numbering_format'] = num_fmt.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val') if num_fmt is not None else 'unknown'
+                        break
+        except Exception as e:
+            style_info['numbering_format'] = f'error: {str(e)}'
+
+    return style_info
+
 
     try:
         doc = Document(file_path)
