@@ -12,13 +12,12 @@ from docx.table import _Table
 
 
 def iter_block_items(parent):
-    """Yield paragraphs and tables from a document or cell"""
     if isinstance(parent, _Document):
         parent_elm = parent.element.body
     elif isinstance(parent, _Cell):
         parent_elm = parent._tc
     else:
-        raise ValueError("Unknown parent type")
+        raise ValueError("Unsupported parent type")
 
     for child in parent_elm.iterchildren():
         if isinstance(child, CT_P):
@@ -27,44 +26,31 @@ def iter_block_items(parent):
             yield _Table(child, parent)
 
 
-def get_numbering(paragraph, doc):
-    """Return actual numbering text (e.g., 1, 1.1) from paragraph if part of a numbered list"""
-    numbering_definitions = doc.part.numbering_part.numbering_definitions._numbering
-    numPr = paragraph._p.pPr.numPr if paragraph._p.pPr is not None else None
+def get_style_info(paragraph):
+    """Get list level and infer numbering type via visible bullet"""
+    style_info = {
+        'text': paragraph.text.strip(),
+        'style_name': paragraph.style.name if paragraph.style else None,
+        'is_list': False,
+        'list_level': None,
+        'number_type': None  # "numbered" or "alphabet"
+    }
 
-    if not numPr:
-        return None, None
+    if paragraph._p.pPr is not None and paragraph._p.pPr.numPr is not None:
+        style_info['is_list'] = True
+        ilvl = paragraph._p.pPr.numPr.ilvl
+        style_info['list_level'] = int(ilvl.val) if ilvl is not None else 0
 
-    numId = numPr.numId.val
-    ilvl = int(numPr.ilvl.val)
+        # Infer type by visible bullet (regex)
+        text = paragraph.text.strip()
+        if re.match(r'^\d+(\.\d+)?[\.\)]\s+', text):  # e.g., "1. ", "1.1. "
+            style_info['number_type'] = "numbered"
+        elif re.match(r'^[a-zA-Z][\.\)]\s+', text):  # e.g., "a) ", "i. "
+            style_info['number_type'] = "alpha"
+        else:
+            style_info['number_type'] = "unknown"
 
-    abstractNumId = None
-    for num in numbering_definitions.findall('.//w:num', numbering_definitions.nsmap):
-        if int(num.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}numId')) == numId:
-            abstractNumId = num.find('w:abstractNumId', numbering_definitions.nsmap).get(
-                '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')
-            break
-
-    if abstractNumId:
-        lvl = None
-        for abstract in numbering_definitions.findall('.//w:abstractNum', numbering_definitions.nsmap):
-            if abstract.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}abstractNumId') == abstractNumId:
-                lvls = abstract.findall('.//w:lvl', numbering_definitions.nsmap)
-                for l in lvls:
-                    if int(l.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}ilvl')) == ilvl:
-                        lvl = l
-                        break
-                break
-
-        if lvl is not None:
-            # Now format number like 1, 1.1, etc.
-            # We cannot compute exact full numbers (like 1.1.2) without full list traversal,
-            # but we will approximate using ilvl and count.
-
-            # For now, return ilvl for level grouping
-            return ilvl, paragraph.text.strip()
-
-    return None, None
+    return style_info
 
 
 def countExtractor(file_path):
@@ -80,29 +66,25 @@ def countExtractor(file_path):
             if isinstance(block, Paragraph):
                 text = block.text.strip()
 
-                # Look for inclusion criteria heading
                 if not inclusion_criteria_found and "inclusion criteria" in text.lower():
                     inclusion_criteria_found = True
                     in_section = True
                     continue
 
-                # If we reach exclusion or a heading, stop
                 if in_section and ("exclusion criteria" in text.lower() or block.style.name.startswith("Heading")):
                     break
 
-                if in_section and block.style.name == "List Paragraph":
-                    ilvl, item_text = get_numbering(block, doc)
+                style_info = get_style_info(block)
 
-                    if ilvl is None:
-                        continue
+                if not (style_info['is_list'] and style_info['number_type'] == "numbered"):
+                    continue  # skip if not numbered bullet
 
-                    if ilvl == 0:
-                        # New top-level IC
-                        current_ic_key = f"IC_{ic_counter}"
-                        inclusion_dict[current_ic_key] = [item_text]
-                        ic_counter += 1
-                    elif ilvl == 1 and current_ic_key:
-                        inclusion_dict[current_ic_key].append(item_text)
+                if style_info['list_level'] == 0:
+                    current_ic_key = f"IC_{ic_counter}"
+                    inclusion_dict[current_ic_key] = [style_info['text']]
+                    ic_counter += 1
+                elif style_info['list_level'] == 1 and current_ic_key:
+                    inclusion_dict[current_ic_key].append(style_info['text'])
 
         return {"Inclusion Criteria": inclusion_dict}
 
@@ -112,7 +94,7 @@ def countExtractor(file_path):
 
 
 def main():
-    file_path = "/home/vanshita.m297/Desktop/PS updated/Protocol-Scrapper/data/77242113PSO3001---Protocol.docx"  # update as needed
+    file_path = "/home/vanshita.m297/Desktop/PS updated/Protocol-Scrapper/data/77242113PSO3001---Protocol.docx"
     result = countExtractor(file_path)
     print(json.dumps(result, indent=2))
 
