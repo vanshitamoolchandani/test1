@@ -1,0 +1,121 @@
+import json
+import re
+from docx import Document
+from docx.text.paragraph import Paragraph
+from docx.table import Table
+from docx.oxml.text.paragraph import CT_P
+from docx.oxml.table import CT_Tbl
+from docx.document import Document as _Document
+from docx.table import _Cell
+from docx.text.paragraph import _Paragraph
+from docx.table import _Table
+
+
+def iter_block_items(parent):
+    """Yield paragraphs and tables from a document or cell"""
+    if isinstance(parent, _Document):
+        parent_elm = parent.element.body
+    elif isinstance(parent, _Cell):
+        parent_elm = parent._tc
+    else:
+        raise ValueError("Unknown parent type")
+
+    for child in parent_elm.iterchildren():
+        if isinstance(child, CT_P):
+            yield _Paragraph(child, parent)
+        elif isinstance(child, CT_Tbl):
+            yield _Table(child, parent)
+
+
+def get_numbering(paragraph, doc):
+    """Return actual numbering text (e.g., 1, 1.1) from paragraph if part of a numbered list"""
+    numbering_definitions = doc.part.numbering_part.numbering_definitions._numbering
+    numPr = paragraph._p.pPr.numPr if paragraph._p.pPr is not None else None
+
+    if not numPr:
+        return None, None
+
+    numId = numPr.numId.val
+    ilvl = int(numPr.ilvl.val)
+
+    abstractNumId = None
+    for num in numbering_definitions.findall('.//w:num', numbering_definitions.nsmap):
+        if int(num.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}numId')) == numId:
+            abstractNumId = num.find('w:abstractNumId', numbering_definitions.nsmap).get(
+                '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')
+            break
+
+    if abstractNumId:
+        lvl = None
+        for abstract in numbering_definitions.findall('.//w:abstractNum', numbering_definitions.nsmap):
+            if abstract.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}abstractNumId') == abstractNumId:
+                lvls = abstract.findall('.//w:lvl', numbering_definitions.nsmap)
+                for l in lvls:
+                    if int(l.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}ilvl')) == ilvl:
+                        lvl = l
+                        break
+                break
+
+        if lvl is not None:
+            # Now format number like 1, 1.1, etc.
+            # We cannot compute exact full numbers (like 1.1.2) without full list traversal,
+            # but we will approximate using ilvl and count.
+
+            # For now, return ilvl for level grouping
+            return ilvl, paragraph.text.strip()
+
+    return None, None
+
+
+def countExtractor(file_path):
+    try:
+        doc = Document(file_path)
+        inclusion_criteria_found = False
+        in_section = False
+        ic_counter = 1
+        current_ic_key = None
+        inclusion_dict = {}
+
+        for block in iter_block_items(doc):
+            if isinstance(block, Paragraph):
+                text = block.text.strip()
+
+                # Look for inclusion criteria heading
+                if not inclusion_criteria_found and "inclusion criteria" in text.lower():
+                    inclusion_criteria_found = True
+                    in_section = True
+                    continue
+
+                # If we reach exclusion or a heading, stop
+                if in_section and ("exclusion criteria" in text.lower() or block.style.name.startswith("Heading")):
+                    break
+
+                if in_section and block.style.name == "List Paragraph":
+                    ilvl, item_text = get_numbering(block, doc)
+
+                    if ilvl is None:
+                        continue
+
+                    if ilvl == 0:
+                        # New top-level IC
+                        current_ic_key = f"IC_{ic_counter}"
+                        inclusion_dict[current_ic_key] = [item_text]
+                        ic_counter += 1
+                    elif ilvl == 1 and current_ic_key:
+                        inclusion_dict[current_ic_key].append(item_text)
+
+        return {"Inclusion Criteria": inclusion_dict}
+
+    except Exception as e:
+        print(f"Error extracting styles: {str(e)}")
+        return {}
+
+
+def main():
+    file_path = "/home/vanshita.m297/Desktop/PS updated/Protocol-Scrapper/data/77242113PSO3001---Protocol.docx"  # update as needed
+    result = countExtractor(file_path)
+    print(json.dumps(result, indent=2))
+
+
+if __name__ == "__main__":
+    main()
