@@ -18,40 +18,73 @@ def extract_sections(doc_path):
             continue
 
         if style.startswith("Heading") and "exclusion criteria" in text.lower():
+            print(f"[INFO] Found start of exclusion criteria at heading: {text}")
             in_exclusion_section = True
             continue
 
         if in_exclusion_section:
             if style.startswith("Heading") and "lifestyle considerations" in text.lower():
+                print(f"[INFO] Found end of exclusion criteria at heading: {text}")
                 break
             exclusion_text.append(text)
 
     full_text = "\n".join(p.text for p in paragraphs if p.text.strip())
     exclusion_section_text = "\n".join(exclusion_text)
 
+    print(f"[INFO] Total full text length: {len(full_text)} characters")
+    print(f"[INFO] Exclusion section length: {len(exclusion_section_text)} characters")
+
     return full_text, exclusion_section_text
 
-# Run NER using HuggingFace models
+# NER with token length awareness
 def extract_entities(text, model_name, entity_type_filter=None):
-    ner = pipeline("ner", model=model_name, aggregation_strategy="simple")
-    entities = ner(text)
-    filtered = [e['word'].strip() for e in entities if entity_type_filter is None or e['entity_group'] in entity_type_filter]
-    return list(set(filtered))
+    ner = pipeline("ner", model=model_name, aggregation_strategy="simple", truncation=True)
+    CHUNK_SIZE = 400  # Number of words per chunk
+    words = text.split()
+    chunks = [" ".join(words[i:i+CHUNK_SIZE]) for i in range(0, len(words), CHUNK_SIZE)]
 
-# Main logic
+    all_entities = []
+    print(f"[INFO] Running NER on {len(chunks)} chunk(s)...")
+    for i, chunk in enumerate(chunks):
+        print(f"  ↪ Chunk {i+1}/{len(chunks)}: {len(chunk)} characters")
+        try:
+            entities = ner(chunk)
+            filtered = [e['word'].strip() for e in entities if entity_type_filter is None or e['entity_group'] in entity_type_filter]
+            all_entities.extend(filtered)
+        except Exception as e:
+            print(f"[ERROR] NER failed on chunk {i+1}: {e}")
+
+    deduped = list(set(all_entities))
+    print(f"[INFO] Extracted {len(deduped)} unique entities from text")
+    return deduped
+
+# Main processing
 def process_protocol(file_path, output_path="extracted_data.json"):
     full_text, exclusion_text = extract_sections(file_path)
 
-    print("🔍 Extracting medications...")
+    print("🔍 Extracting medications from full protocol...")
     all_meds = extract_entities(full_text, "d4data/biomedical-ner-all", ["DRUG"])
+
+    print("🔍 Extracting medications from exclusion criteria...")
     exclusion_meds = extract_entities(exclusion_text, "d4data/biomedical-ner-all", ["DRUG"])
 
-    print("🔍 Extracting diseases...")
+    print("🔍 Extracting diseases from full protocol...")
     all_diseases = extract_entities(full_text, "ner-disease-ncbi-biolp-bc5cdr-pubmed")
+
+    print("🔍 Extracting diseases from exclusion criteria...")
     exclusion_diseases = extract_entities(exclusion_text, "ner-disease-ncbi-biolp-bc5cdr-pubmed")
 
     final_meds = sorted(set(all_meds) - set(exclusion_meds))
     final_diseases = sorted(set(all_diseases) - set(exclusion_diseases))
+
+    print(f"\n[SUMMARY]")
+    print(f"  All medications: {len(all_meds)}")
+    print(f"  Exclusion medications: {len(exclusion_meds)}")
+    print(f"  Final medications (after exclusion): {len(final_meds)}")
+
+    print(f"  All diseases: {len(all_diseases)}")
+    print(f"  Exclusion diseases: {len(exclusion_diseases)}")
+    print(f"  Final diseases (after exclusion): {len(final_diseases)}")
 
     result = {
         "all": {
@@ -71,7 +104,7 @@ def process_protocol(file_path, output_path="extracted_data.json"):
     with open(output_path, "w") as f:
         json.dump(result, f, indent=2)
 
-    print(f"✅ Extraction complete. Results saved to {output_path}")
+    print(f"\n✅ Results saved to {output_path}")
 
 # Example usage
 if __name__ == "__main__":
