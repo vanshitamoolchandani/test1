@@ -1,0 +1,78 @@
+import json
+from docx import Document
+from transformers import pipeline
+
+# Load docx and identify start and end of exclusion criteria section
+def extract_sections(doc_path):
+    doc = Document(doc_path)
+    paragraphs = list(doc.paragraphs)
+
+    exclusion_text = []
+    in_exclusion_section = False
+
+    for para in paragraphs:
+        text = para.text.strip()
+        style = para.style.name if para.style else ""
+
+        if not text:
+            continue
+
+        if style.startswith("Heading") and "exclusion criteria" in text.lower():
+            in_exclusion_section = True
+            continue
+
+        if in_exclusion_section:
+            if style.startswith("Heading") and "lifestyle considerations" in text.lower():
+                break
+            exclusion_text.append(text)
+
+    full_text = "\n".join(p.text for p in paragraphs if p.text.strip())
+    exclusion_section_text = "\n".join(exclusion_text)
+
+    return full_text, exclusion_section_text
+
+# Run NER using HuggingFace models
+def extract_entities(text, model_name, entity_type_filter=None):
+    ner = pipeline("ner", model=model_name, aggregation_strategy="simple")
+    entities = ner(text)
+    filtered = [e['word'].strip() for e in entities if entity_type_filter is None or e['entity_group'] in entity_type_filter]
+    return list(set(filtered))
+
+# Main logic
+def process_protocol(file_path, output_path="extracted_data.json"):
+    full_text, exclusion_text = extract_sections(file_path)
+
+    print("🔍 Extracting medications...")
+    all_meds = extract_entities(full_text, "d4data/biomedical-ner-all", ["DRUG"])
+    exclusion_meds = extract_entities(exclusion_text, "d4data/biomedical-ner-all", ["DRUG"])
+
+    print("🔍 Extracting diseases...")
+    all_diseases = extract_entities(full_text, "ner-disease-ncbi-biolp-bc5cdr-pubmed")
+    exclusion_diseases = extract_entities(exclusion_text, "ner-disease-ncbi-biolp-bc5cdr-pubmed")
+
+    final_meds = sorted(set(all_meds) - set(exclusion_meds))
+    final_diseases = sorted(set(all_diseases) - set(exclusion_diseases))
+
+    result = {
+        "all": {
+            "medications": sorted(all_meds),
+            "diseases": sorted(all_diseases)
+        },
+        "exclusion_criteria": {
+            "medications": sorted(exclusion_meds),
+            "diseases": sorted(exclusion_diseases)
+        },
+        "final": {
+            "medications": final_meds,
+            "diseases": final_diseases
+        }
+    }
+
+    with open(output_path, "w") as f:
+        json.dump(result, f, indent=2)
+
+    print(f"✅ Extraction complete. Results saved to {output_path}")
+
+# Example usage
+if __name__ == "__main__":
+    process_protocol("clinical_protocol.docx")
