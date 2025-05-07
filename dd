@@ -1,0 +1,1097 @@
+import re
+import spacy
+from docx import Document
+from docx.oxml.ns import qn
+import pandas as pd
+from dateutil import parser
+import os
+from PIL import Image
+from io import BytesIO
+import cv2
+import re
+from spacy.matcher import Matcher
+import pytesseract
+from transformers import AutoTokenizer, AutoModelForTokenClassification
+from collections import defaultdict
+from transformers import pipeline
+from docx import Document
+from docx.document import Document as _Document
+from docx.oxml.table import CT_Tbl
+from docx.table import _Cell
+from docx.oxml.text.paragraph import CT_P
+from docx.table import Table as _Table
+from docx.text.paragraph import Paragraph as _Paragraph
+
+
+
+title = None 
+
+def read_word_file(file_path):
+
+    doc = Document(file_path)
+    text = [para.text.strip() for para in doc.paragraphs if para.text.strip()]
+    return text
+
+
+def title_extractor(file_path):
+    title_keywords = ["Title:", "Study Title:"]
+    required_title_keywords =["Open-label", "Randomized", "Controlled", "Multicenter"]
+    section_heading = ["Protocol Summary", "SYNOPSIS", "Synopsis"]
+    valid_starts = ("A", "An")
+    doc = Document(file_path)
+    try:
+
+        def keywordCheck(text):
+            return any(keyword.lower() in text.lower() for keyword in required_title_keywords)
+
+        found_section = False
+        previous_text = ""
+
+        #Search for title in paragraph with the keywords
+        for para in doc.paragraphs:
+            
+            text = para.text.strip()
+            #print(f"text {repr(text)}")
+            
+            if text in section_heading:
+                
+                found_section = True
+                # print(f"section found {repr(text)}")
+                continue
+
+            if found_section:
+                if keywordCheck(text):
+                    # print(f"matched keyword {repr(text)}")
+
+                    title = text.strip()  
+                    return title
+                for keyword in title_keywords:
+                    if keyword in text:
+                        title = text.split(keyword, 1)[-1].strip()                            
+                        if any(kw.lower() in title.lower() for kw in required_title_keywords) and title.startswith(valid_starts):
+                            return title
+
+
+
+                    
+            if found_section:
+                for table in doc.tables:
+                    for row in table.rows:
+                        for cell in row.cells:
+                            cell_text = cell.text.strip()
+                            # print(f"checking table cell {repr(cell_text)}")
+
+                            for keyword in title_keywords:
+                                if keyword in cell_text:
+                                    title = cell_text.split(keyword, 1)[-1].strip()                            
+
+                                    if any(kw.lower() in title.lower() for kw in required_title_keywords) and title.startswith(valid_starts):
+                                        return title
+
+                            
+
+
+
+                    if len(row.cells) > 1:
+                        header_text = row.cells[0].text.strip()
+                        value_text = row.cells[1].text.strip()
+
+                        if any(kw.lower() in header_text.lower() for kw in title_keywords):
+                            title = value_text.strip()
+
+                            if any(kw.lower() in title.lower() for kw in required_title_keywords) and title.startswith(valid_starts):
+                                # print("Matched Title in table {repr(title)}")
+                                return title
+                            
+                            
+
+        return "Title not Found"
+
+    except Exception as e:
+        print(f"Error: {e}")
+        return "Error extracting Title"
+
+
+def amendment_date_extractor(file_path):
+    doc = Document(file_path)
+    latest_amendment = {"amendment": None, "date": None}
+
+    for table in doc.tables:
+        for row in table.rows:
+            row_text = [cell.text.strip() for cell in row.cells]
+
+            # Check if any cell contains "Amendment X" (where X is a number)
+            amendment_match = re.search(r"Amendment\s*(\d+)", " | ".join(row_text), re.IGNORECASE)
+            if amendment_match:
+                amendment_number = int(amendment_match.group(1))
+
+                # Look for a date in the same row (in any column)
+                date_matches = [parser.parse(cell, fuzzy=True) for cell in row_text if re.search(r"\d{1,2}[\s/-]\w+[\s/-]\d{2,4}", cell)]
+                
+                if date_matches:
+                    amendment_date = max(date_matches)  # Pick the latest date if multiple are found
+
+                    # Update the latest amendment
+                    if (latest_amendment["amendment"] is None or 
+                        amendment_number > latest_amendment["amendment"] or 
+                        (amendment_number == latest_amendment["amendment"] and amendment_date > latest_amendment["date"])):
+                        
+                        latest_amendment["amendment"] = amendment_number
+                        latest_amendment["date"] = amendment_date
+
+    # Format the extracted date
+    if latest_amendment["date"]:
+        latest_amendment["date"] = latest_amendment["date"].strftime("%d %B %Y")
+
+    return latest_amendment
+
+
+
+
+def age_extractor(file_path):
+    inclusion_heading = "Inclusion Criteria"
+    exclusion_heading = "Exclusion Criteria"
+    
+    age_patterns = [
+        r"(\d+)\s*-\s*(\d+)\s*years?",  # "18 - 65 years"
+        r"(\d+)\s*to\s*(\d+)\s*years?\s*of\s*age",  # "18 to 65 years of age"
+        r"≥\s*(\d+)\s*years?",  # "≥ 18 years"
+        r"≤\s*(\d+)\s*years?",  # "≤ 65 years"
+        r"at least (\d+) years? of age",  # "at least 12 years of age"
+        r"no older than (\d+) years?"  # "no older than 80 years"
+    ]
+
+    doc = Document(file_path)
+    found_section = False  
+    min_age = None
+    max_age = None
+    inclusion_text = ""
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        #print(f"DEBUG: Checking Paragraph -> {repr(text)}")  
+
+        if text.lower().startswith(inclusion_heading.lower()):
+            found_section = True
+            # print(f"DEBUG: Found Section -> {repr(text)}")  
+            continue
+
+        if found_section and text.lower().startswith(exclusion_heading.lower()):
+            # print(f"DEBUG: Found exclusion criteria {repr(text)}")
+            break
+
+        if found_section:
+            inclusion_text += text + "\n" 
+    
+
+            for match in re.finditer(r"|".join(age_patterns), inclusion_text, re.IGNORECASE):
+                age_match = match.group()
+                start_idx, end_idx = match.start(), match.end()
+
+                # print(f"DEBUG: Found Age Mention -> {repr(age_match)} at index {start_idx}-{end_idx}")
+
+                # Check for 'screening' or 'consent' within ±50 characters
+                surrounding_text = inclusion_text[max(0, start_idx - 10): min(len(inclusion_text), end_idx + 10)]
+                # if re.search(r"\b(screening|consent)\b", surrounding_text, re.IGNORECASE):
+                #     print(f"DEBUG: Found 'screening' or 'consent' near age mention -> {repr(surrounding_text)}")
+
+                # Extract numeric values from matched text
+                age_numbers = re.findall(r"(\d+)", age_match)
+                if age_numbers:
+                    age_numbers = list(map(int, age_numbers))
+                    if len(age_numbers) == 2:
+                        min_age, max_age = age_numbers
+                        # print(f"DEBUG: Updated min_age -> {min_age}, max_age -> {max_age}")
+                    elif "at least" in age_match or "≥" in age_match:
+                        min_age = age_numbers[0]
+                        # print(f"DEBUG: Updated min_age -> {min_age}")
+                    elif "no older than" in age_match or "≤" in age_match:
+                        max_age = age_numbers[0]
+                        # print(f"DEBUG: Updated max_age -> {max_age}")
+
+
+    age_data = {"min": min_age, "max": max_age}
+    return age_data
+
+
+
+def weight_extractor(file_path):
+    inclusion_heading = "Inclusion Criteria"
+    exclusion_heading = "Exclusion Criteria"
+    
+    weight_bmi_patterns = [
+        # Weight patterns
+        r"\b(?:weight|body weight)\b.*?(\d+\.?\d*)\s*(?:kg|kilograms)\b",
+        r"\b(\d+\.?\d*)\s*(?:kg|kilograms)\b.*?\b(?:weight|body weight)\b",
+        r"\b(\d+\.?\d*)\s*-\s*(\d+\.?\d*)\s*(?:kg|kilograms)\b",
+        r"(?:≥|≤|>|<)\s*(\d+\.?\d*)\s*(?:kg|kilograms)\b",
+        
+        
+
+        r"\b(?:BMI|Body mass index)\b.*?(\d+\.?\d*)\s*to\s*(\d+\.?\d*)\s*kg/m[²2]",
+        r"\b(?:BMI|Body mass index)\b.*?(\d+\.?\d*)\s*-\s*(\d+\.?\d*)\s*kg/m[²2]",
+        r"\b(?:BMI|Body mass index)\b.*?(?:≥|≤|>|<)\s*(\d+\.?\d*)\s*kg/m[²2]\b"
+    ]
+
+    doc = Document(file_path)
+    found_section = False
+    extracted_weight_bmi_data = set()
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        
+        if text.lower().startswith(inclusion_heading.lower()):
+            found_section = True
+            continue
+        
+        if found_section and text.lower().startswith(exclusion_heading.lower()):
+            break
+        
+        if found_section:
+            # Check for weight/BMI patterns in each paragraph
+            if re.search(r"|".join(weight_bmi_patterns), text, re.IGNORECASE):
+                extracted_weight_bmi_data.add(text)
+
+    return list(extracted_weight_bmi_data)
+
+
+# def participant_count_extractor(file_path):
+
+#     doc = Document(file_path)
+    
+#     sample_size_heading_pattern = re.compile(r"^\s*(\d+(\.\d+)*)?\s*Sample Size (Determination|Consideration)\s*$", re.IGNORECASE)
+    
+#     participants_pattern = re.compile(r"(\d+)\s+(Participants|Subjects)\b", re.IGNORECASE)
+
+#     found_sample_size = False
+#     participant_count = None
+
+#     for para in doc.paragraphs:
+#         text = para.text.strip()
+        
+#         # Check if this line is a valid 'Sample Size' heading
+#         if sample_size_heading_pattern.match(text):
+#             print(f"Found 'Sample Size' heading: '{repr(text)}'")
+#             found_sample_size = True
+#             continue  # Skip the heading itself
+        
+#         # If we're in the Sample Size section, look for the pattern "number Participants"
+#         if found_sample_size:
+#             # Search for the pattern "number Participants"
+#             match = participants_pattern.search(text)
+#             if match:
+#                 participant_count = int(match.group(1))  # Extract the number
+#                 print(f"Found participant count: {participant_count}")
+#                 break  # Stop after finding the first valid number
+
+#     if participant_count is not None:
+#         return participant_count
+#     else:
+#         return "No participant count found."
+
+
+def participant_count_extractor(file_path):
+
+    
+    sample_size_heading_pattern = re.compile(r"^\s*(\d+(\.\d+)*)?\s*NUMBER OF PARTICIPANTS\s*$", re.IGNORECASE)
+    doc = Document(file_path)
+
+    found_sample_size = False
+    section_text = []
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+
+        if sample_size_heading_pattern.match(text):
+            # print(f"Found sample size: '{text}")
+            found_sample_size = True
+            continue
+
+        if found_sample_size:
+            if para.style.name.startswith("Heading"):
+                # print(f"New heading: {text}")
+                break
+
+            section_text.append(text)
+
+    if not section_text:
+        return [{"text": "No NUMBER OF PARTICIPANTS section found"}]
+
+    combined_text = ".\n".join(section_text)
+    return extracted_participant_counts_from_text(combined_text)
+
+def extracted_participant_counts_from_text(text):
+    results = []
+    nlp = spacy.load("en_core_web_sm")
+    doc = nlp(text)
+
+    for sent in doc.sents:
+        sent_text = sent.text.strip()
+        sent_lower = sent.text.lower()
+        if "participants" not in sent_lower:
+            continue
+        candidate_values = []
+        found_value = None
+        for ent in sent.ents:
+            # print(f"{ent.text}: {ent.label_}")
+            if ent.label_ == "CARDINAL":
+                if re.search(r"\b(total|approximately|maximun|at least|enroll|overall|up to|target)\b", sent_lower):
+                    match =  re.search(r"\d+[\d,\.]*", ent.text)
+                    if match:
+                        try:
+                            found_value = int(float(match.group(0).replace(",", "")))
+                            candidate_values.append(found_value)
+                        except ValueError:
+                            continue
+                    
+        if candidate_values:
+            max_val = max(candidate_values)
+            results.append({
+                "text": sent_text,
+                "value": max_val
+            })
+
+    return results
+
+
+def ratio_extractor(file_path):
+    # Extarct the entire statement where the count of participants is present
+    doc = Document(file_path)
+    
+    # Pattern to match the word "ratio" (case-insensitive)
+    ratio_keyword_pattern = re.compile(r"\bratio\b", re.IGNORECASE)
+    ratio_pattern = re.compile(r"\b(\d+\s*:\s*\d+(?:\s*:\s*\d+)*)\b")
+
+    results = []
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        
+        if not text:
+            continue
+        # Search for the word "ratio"
+        
+        if ratio_keyword_pattern.search(text):
+            match = ratio_keyword_pattern.search(text)
+            # print(f"Found 'ratio' in text: '{text}'")
+            
+            # Extract the entire sentence containing the word "ratio"
+            sentences = re.split(r'(?<=[.!?])\s+', text)  # Split text into sentences
+            for sentence in sentences:
+                if ratio_keyword_pattern.search(sentence):
+                    normalized_sentence = ratio_pattern.search(sentence)
+                    try:
+                        if normalized_sentence:
+                            results.append({
+                                "text": text,
+                                "value": normalized_sentence.group().replace(" ", "")
+                            })
+
+                    except ValueError:
+                        print("Word 'ratio' not found in the normalized sentence. Skipping this sentence.")
+                        continue
+    
+    return results
+
+
+
+def therapeutic_area_extractor(title):
+
+    meds = extract_entities(title, "d4data/biomedical-ner-all", ["Medication"])
+    diseases = extract_entities(title, "raynardj/ner-disease-ncbi-bionlp-bc5cdr-pubmed")
+
+
+    return {"medications": meds, "diseases": diseases}
+
+
+def image_text_extractor(file_path):
+    doc = Document(file_path)
+    protocol_name = os.path.splitext(os.path.basename(file_path))[0]
+    image_folder = os.path.join('schema', f"{protocol_name}-schema")
+    os.makedirs(image_folder, exist_ok=True)
+
+    figure_pattern = re.compile(r'(Figure \d+[^\n]*)')
+    image_count = 0
+    figure_labels = []
+
+    schema_heading = re.compile(r"^\s*(\d+(\.\d+)*)?\s*Schema\s*$", re.IGNORECASE)
+
+    
+    schema_heading_found = False
+    section_texts = []
+    
+
+    # print(f"created folder: {image_folder}")
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+
+        if schema_heading.match(text):
+            # print(f"Found Schema heading: {text}")
+            schema_heading_found = True
+            continue
+
+        if schema_heading_found:
+            if para.style.name.startswith("Heading"):
+                # print(f"New heading: {text}")
+                break
+
+            match = figure_pattern.search(text)
+            if match:
+                label = match.group().replace(" ", "_").replace("/", "-") + ".png"
+                figure_labels.append(label)
+                # print(f"found image lable: {label}")
+    
+    image_index = 0
+
+    for rel in doc.part.rels:
+            if "image" in doc.part.rels[rel].target_ref:
+                if image_index < len(figure_labels):
+                    image = doc.part.rels[rel].target_part.blob
+                    img = Image.open(BytesIO(image))
+                    image_path = os.path.join(image_folder, figure_labels[image_index])
+                    img.save(image_path)
+                    # print(f"saved image: {image_path}")
+
+                    section_text = pytesseract.image_to_string(img)
+                    section_texts.append(f"{figure_labels[image_index]}:\n{section_text}\n")
+                    # print(f"Extracted text from: {figure_labels[image_index]}")
+                    image_index += 1
+
+    debug_text_path = os.path.join(image_folder, "section_texts.txt")
+    with open(debug_text_path, "w", encoding="utf-8") as f:
+        f.writelines(section_texts)
+    # print(f"Saved extracted text: {debug_text_path}")
+
+    return image_folder
+
+
+def arm_cohort_table_extractor(file_path):
+    try:
+        doc = Document(file_path)
+    except Exception as e:
+        print(f"Error reading the file: {e}")
+        return {}
+
+    table_label_pattern = re.compile(
+        r"^(?!.*\.\.\.)\s*(?:Table\s+[\dA-Za-z]+:\s*)?Description\s+of\s+(?:Study\s+Arms|Interventions|Treatment)(?:\s+.+)?",
+        re.IGNORECASE | re.MULTILINE 
+    )
+
+    extracted_tables = {}
+    paragraphs = doc.paragraphs
+    tables = doc.tables
+
+    para_per_page = 30
+    start_index = 20 * para_per_page
+
+    
+    # store indices of paragraphs that match the heading regex
+    matched_headings = []
+    
+    for i in range(start_index, len(paragraphs)):
+        # print(f"looking at {paragraphs[i]}: {paragraphs[i].text}")
+        if table_label_pattern.search(paragraphs[i].text):  # If heading matches regex
+            matched_headings.append(i)
+            # print(f"Found matching heading: {paragraphs[i].text.strip()} at paragraph {i}")
+
+    table_position = []  # track which table to associate with the matched heading
+    para_count = 0
+    for element in doc.element.body:
+        if element.tag.endswith('tbl'):
+            table_position.append(para_count)
+        elif element.tag.endswith('p'):
+            para_count += 1
+
+    for heading_idx in matched_headings:
+        heading_text = paragraphs[heading_idx].text.strip()
+
+        table_found = None
+        for table_num, table_pos in enumerate(table_position):
+            if table_pos > heading_idx and table_num < len(tables):
+                table_found = tables[table_num]
+                # print(f"found table {table_num} at position {table_pos} for heading at {heading_idx}")
+
+                break
+        if table_found:
+            extracted_tables[heading_text] = extract_table_data(table_found)
+            # print(f"Extracted table for: {heading_text}")
+        else:
+            print(f"No table found after: {heading_text}")
+    
+    return extracted_tables
+
+
+def extract_table_data(table):
+    data = []
+    headers = [cell.text.strip() for cell in table.rows[0].cells]  # Extract headers
+
+    # print(f"Table Headers: {headers}")
+
+    for row in table.rows[1:]:  # Skip header row
+        row_data = {headers[i]: row.cells[i].text.strip() for i in range(len(headers))}
+        data.append(row_data)
+
+        # print(f"Row data: {row_data}")
+
+    return data
+
+
+def inclusion_count_extractor(file_path):
+    def iter_block_items(parent):
+        if isinstance(parent, _Document):
+            parent_elm = parent.element.body
+        for child in parent_elm.iterchildren():
+            if isinstance(child, CT_P):
+                yield _Paragraph(child, parent)
+            elif isinstance(child, CT_Tbl):
+                yield _Table(child, parent)
+
+
+
+    def get_style_details(paragraph, doc):
+        style_info = {
+            'text': paragraph.text.strip(),
+            'style_name': paragraph.style.name if paragraph.style else None,
+            'is_list': False,
+            'list_level': None,
+            'numbering_format': None,
+            'is_table': False
+        }
+
+        # Check if paragraph is part of a list
+        if paragraph._p.pPr is not None and paragraph._p.pPr.numPr is not None:
+            num_pr = paragraph._p.pPr.numPr
+            style_info['is_list'] = True
+
+            # List level (ilvl)
+            ilvl = num_pr.ilvl
+            style_info['list_level'] = int(ilvl.val) if ilvl is not None else 0
+
+            try:
+                num_id = num_pr.numId.val
+                numbering = doc.part.numbering_part.numbering_definitions._numbering
+                abstract_num_id = None
+                for num in numbering.findall('.//w:num', numbering.nsmap):
+                    if int(num.find('w:numId', numbering.nsmap).get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')) == num_id:
+                        abstract_num_id = num.find('w:abstractNumId', numbering.nsmap).get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')
+                        break
+
+                if abstract_num_id:
+                    for abstract in numbering.findall('.//w:abstractNum', numbering.nsmap):
+                        if abstract.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}abstractNumId') == abstract_num_id:
+                            num_fmt = abstract.find('.//w:numFmt', numbering.nsmap)
+                            style_info['numbering_format'] = num_fmt.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val') if num_fmt is not None else 'unknown'
+                            break
+            except Exception as e:
+                style_info['numbering_format'] = f'error: {str(e)}'
+
+        return style_info
+
+
+
+
+    try:
+        doc = Document(file_path)
+        styles_data = []
+        in_section = False
+        table_found = False
+        inclusion_criteria_found = False
+
+        inclusion_data = {}
+        main_point_index = 0
+        current_main_point = None
+
+
+        for block in iter_block_items(doc):
+            if isinstance(block, _Paragraph):
+                text = block.text.strip()
+                # print(f"Paragraph text: {text}")  
+                style_info = get_style_details(block, doc)
+                styles_data.append(style_info)
+                # print(f"Style info: {style_info}") 
+                if not inclusion_criteria_found and "inclusion criteria" in text.lower():
+                    inclusion_criteria_found = True
+                    in_section = True
+                    print("Inclusion criteria section found.")
+                    continue
+
+                if in_section:
+                    if style_info['text'] == 'Exclusion Criteria' and (block.style.name.startswith('Heading 2') or block.style.name.startswith('Heading 1')):
+                        print("Exclusion criteria.")
+                        break
+
+                    style_info = get_style_details(block, doc)
+                    styles_data.append(style_info)
+                    print(f"Style info: {style_info}") 
+
+                    if style_info['style_name'] == 'List Paragraph' and style_info['list_level'] == 0:
+                        main_point_index += 1
+                        inclusion_data[str(main_point_index)] = 0
+                        current_main_point = str(main_point_index)
+                        print(f"New main point found: {current_main_point}")
+                    elif style_info['style_name'] == 'List Paragraph' and style_info['list_level'] == 1:
+                        if current_main_point:
+                            if re.match(r"^\s*[\dA-Za-z][\.\)]", text):
+                                inclusion_data[current_main_point] += 1
+                                print(f"Subpoint counted for main point {current_main_point}")
+                            # else:
+                            #     print(f"Subpoint ignored (no number/letter bullet): {text}")
+                    # else:
+                    #     print("Paragraph ignored (not a relevant list paragraph)")
+
+            elif isinstance(block, _Table) and in_section:
+                table_found = True
+                # print("Table found in inclusion criteria section.")
+
+        output = {}
+        total_main_points = main_point_index
+        output["Inclusion Criteria"] = {"count": total_main_points, **inclusion_data}
+        if table_found:
+            output["Inclusion Criteria"]["table_found"] = True
+
+        return output
+
+    except Exception as e:
+        print(f"Error extracting styles: {str(e)}")
+        return {}
+
+
+
+# def exclusion_count_extractor(file_path):
+#     def iter_block_items(parent):
+#         if isinstance(parent, _Document):
+#             parent_elm = parent.element.body
+#         elif isinstance(parent, _Cell):
+#             parent_elm = parent._tc
+#         else:
+#             raise ValueError("Unknown Parent")
+#         for child in parent_elm.iterchildren():
+#             if isinstance(child, CT_P):
+#                 yield _Paragraph(child, parent)
+#             elif isinstance(child, CT_Tbl):
+#                 yield _Table(child, parent)
+
+
+#     def get_style_details(paragraph, doc):
+#         style_info = {
+#             'text': paragraph.text.strip(),
+#             'style_name': paragraph.style.name if paragraph.style else None,
+#             'is_list': False,
+#             'list_level': None,
+#             'numbering_format': None,
+#             'is_table': False
+#         }
+
+#         # Check if paragraph is part of a list
+#         if paragraph._p.pPr is not None and paragraph._p.pPr.numPr is not None:
+#             num_pr = paragraph._p.pPr.numPr
+#             style_info['is_list'] = True
+
+#             # List level (ilvl)
+#             ilvl = num_pr.ilvl
+#             style_info['list_level'] = int(ilvl.val) if ilvl is not None else 0
+
+#             try:
+#                 num_id = num_pr.numId.val
+#                 numbering = doc.part.numbering_part.numbering_definitions._numbering
+#                 abstract_num_id = None
+#                 for num in numbering.findall('.//w:num', numbering.nsmap):
+#                     num_id_elem = num.find('w:numId', numbering.nsmap)
+#                     if num_id_elem is not None:
+#                         current_num_id = num_id_elem.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')
+#                         if current_num_id is not None and int(current_num_id) == num_id:
+#                             abstract_elem = num.find('w:abstractNumId', numbering.nsmap)
+#                             if abstract_elem is not None:
+#                                 abstract_num_id = abstract_elem.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')
+#                             break
+
+#                 if abstract_num_id:
+#                     for abstract in numbering.findall('.//w:abstractNum', numbering.nsmap):
+#                         if abstract.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}abstractNumId') == abstract_num_id:
+#                             num_fmt = abstract.find('.//w:numFmt', numbering.nsmap)
+#                             style_info['numbering_format'] = num_fmt.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val') if num_fmt is not None else 'unknown'
+#                             break
+#             except Exception as e:
+#                 style_info['numbering_format'] = f'error: {str(e)}'
+
+#         return style_info
+
+
+
+#     try:
+#         doc = Document(file_path)
+#         styles_data = []
+#         in_section = False
+#         table_found = False
+#         exclusion_criteria_found = False
+
+#         exclusion_data = {}
+#         main_point_index = 0
+#         current_main_point = None
+
+
+#         for block in iter_block_items(doc):
+            
+#             if isinstance(block, _Paragraph):
+#                 text = block.text.strip()
+#                 # print(f"Paragraph text: {text}")  
+#                 style_info = get_style_details(block, doc)
+#                 styles_data.append(style_info)
+#                 if not exclusion_criteria_found and "exclusion criteria" in text.lower() and (block.style.name.startswith('Heading 2') or block.style.name.startswith('Heading 1')):
+#                     exclusion_criteria_found = True
+#                     in_section = True
+#                     print("exclusion criteria section found.")
+#                     continue
+
+#                 if in_section:
+#                     if style_info['text'] == 'Lifestyle Considerations' and (block.style.name.startswith('Heading 2') or block.style.name.startswith('Heading 1')):
+#                         print("Lifestyle Considerations")
+#                         break
+
+#                     style_info = get_style_details(block, doc)
+#                     styles_data.append(style_info)
+#                     print(f"Style info: {style_info}") 
+
+#                     if style_info['style_name'] == 'List Paragraph' and style_info['list_level'] == 0:
+#                         main_point_index += 1
+#                         exclusion_data[str(main_point_index)] = 0
+#                         current_main_point = str(main_point_index)
+#                         print(f"New main point found: {current_main_point}")
+#                     elif style_info['style_name'] == 'List Paragraph' and style_info['list_level'] == 1:
+#                         if current_main_point:
+#                             if re.match(r"^\s*[\dA-Za-z][\.\)]", text):
+#                                 exclusion_data[current_main_point] += 1
+#                                 # print(f"Subpoint counted for main point {current_main_point}")
+#                             # else:
+#                                 # print(f"Subpoint ignored (no number/letter bullet): {text}")
+#                     # else:
+#                     #     print("Paragraph ignored (not a relevant list paragraph)")
+
+#             elif isinstance(block, _Table) and in_section:
+#                 table_found = True
+#                 # print("Table found in exclusion criteria section.")
+
+#         output = {}
+#         total_main_points = main_point_index
+#         output["exclusion Criteria"] = {"count": total_main_points, **exclusion_data}
+#         if table_found:
+#             output["exclusion Criteria"]["table_found"] = True
+
+#         return output
+
+#     except Exception as e:
+#         print(f"Error extracting styles: {str(e)}")
+#         return {}
+
+# ------------------------------------
+
+
+
+def iter_block_items(parent):
+    """Yield paragraphs and tables from a document or cell"""
+    if isinstance(parent, _Document):
+        parent_elm = parent.element.body
+    elif isinstance(parent, _Cell):
+        parent_elm = parent._tc
+    else:
+        raise ValueError("Unknown parent type")
+
+    for child in parent_elm.iterchildren():
+        if isinstance(child, CT_P):
+            yield _Paragraph(child, parent)
+        elif isinstance(child, CT_Tbl):
+            yield _Table(child, parent)
+
+
+def get_numbering(paragraph, doc):
+    """Return actual numbering text (e.g., 1, 1.1) from paragraph if part of a numbered list"""
+    numbering_definitions = doc.part.numbering_part.numbering_definitions._numbering
+    numPr = paragraph._p.pPr.numPr if paragraph._p.pPr is not None else None
+
+    if not numPr:
+        return None, None, None
+
+    numId = numPr.numId.val
+    ilvl = int(numPr.ilvl.val)
+
+    abstractNumId = None
+    for num in numbering_definitions.findall('.//w:num', numbering_definitions.nsmap):
+        if int(num.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}numId')) == numId:
+            abstractNumId = num.find('w:abstractNumId', numbering_definitions.nsmap).get(
+                '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')
+            break
+
+    if abstractNumId:
+        lvl = None
+        for abstract in numbering_definitions.findall('.//w:abstractNum', numbering_definitions.nsmap):
+            if abstract.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}abstractNumId') == abstractNumId:
+                lvls = abstract.findall('.//w:lvl', numbering_definitions.nsmap)
+                for l in lvls:
+                    if int(l.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}ilvl')) == ilvl:
+                        numFmt_elem = l.find('.//w:numFmt', numbering_definitions.nsmap)
+                        numFmt = numFmt_elem.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}ilvl') if numFmt_elem is not None else None
+                        return ilvl, paragraph.text.strip(), numFmt
+
+    return None, None, None
+
+
+def inclusion_count_extractor(file_path):
+    try:
+        doc = Document(file_path)
+        inclusion_criteria_found = False
+        in_section = False
+        ic_counter = 1
+        current_ic_key = None
+        inclusion_dict = {}
+
+        for block in iter_block_items(doc):
+            if isinstance(block, _Paragraph):
+                text = block.text.strip()
+
+                # Look for inclusion criteria heading
+                if not inclusion_criteria_found and "inclusion criteria" in text.lower():
+                    inclusion_criteria_found = True
+                    in_section = True
+                    print(f"IC: {text}")
+                    continue
+
+                # If we reach exclusion or a heading, stop
+                if in_section and ("exclusion criteria" in text.lower() and block.style.name.startswith("Heading")):
+                    print(f"EC: {text}")
+                    break
+
+                if in_section and block.style.name == "List Paragraph" or re.match(r'^\d+(\.\d+)?[\.\)]\s+', block.text):
+                    ilvl, item_text, numFmt = get_numbering(block, doc)
+                    print(f"{text}" )
+                    print(f"{ilvl}  | {numFmt} ")
+                    print("\n")
+
+                    if ilvl is None:
+                        
+                        continue
+
+                    if ilvl == 0:
+                        # New top-level IC
+                        current_ic_key = f"IC_{ic_counter}"
+                        inclusion_dict[current_ic_key] = [item_text]
+                        ic_counter += 1
+                    elif ilvl == 1 and current_ic_key:
+                        inclusion_dict[current_ic_key].append(item_text)
+
+        return  inclusion_dict
+
+    except Exception as e:
+        print(f"Error extracting styles: {str(e)}")
+        return {}
+
+def exclusion_count_extractor(file_path):
+    try:
+        doc = Document(file_path)
+        exclusion_criteria_found = False
+        in_section = False
+        ic_counter = 1
+        current_ic_key = None
+        exclusion_dict = {}
+
+        for block in iter_block_items(doc):
+            if isinstance(block, _Paragraph):
+                text = block.text.strip()
+
+                # Look for exclusion criteria heading
+                if not exclusion_criteria_found and ("exclusion criteria" in text.lower() and block.style.name.startswith("Heading")):
+                    exclusion_criteria_found = True
+                    in_section = True
+                    print(f"EX: {text}")
+                    continue
+
+                # If we reach exclusion or a heading, stop
+                if in_section and ("lifestyle considerations" in text.lower() and block.style.name.startswith("Heading")):
+                    print(f"EC: {text}")
+                    break
+
+                if in_section and block.style.name == "List Paragraph" or re.match(r'^\d+(\.\d+)?[\.\)]\s+', block.text):
+                    ilvl, item_text, numFmt = get_numbering(block, doc)
+                    print(f"{text}" )
+                    print(f"{ilvl}  | {numFmt} ")
+                    print("\n")
+
+                    if ilvl is None:
+                        
+                        continue
+
+                    if ilvl == 0:
+                        # New top-level IC
+                        current_ic_key = f"EX_{ic_counter}"
+                        exclusion_dict[current_ic_key] = [item_text]
+                        ic_counter += 1
+                    elif ilvl == 1 and current_ic_key:
+                        exclusion_dict[current_ic_key].append(item_text)
+        # print(f"fuch me{exclusion_dict}")
+
+        return  exclusion_dict
+
+    except Exception as e:
+        print(f"Error extracting styles: {str(e)}")
+        return {}
+
+
+
+#Utility function 1: to iterate through the document and retrieve table/paragraph blocks
+def iter_block_items(parent):
+    """
+    Generate a reference to each paragraph and table child within *parent*,
+    in document order. Each returned value is an instance of either Table or
+    Paragraph. *parent* would most commonly be a reference to a main
+    Document object, but also works for a _Cell object, which itself can
+    contain paragraphs and tables.
+    """
+    if isinstance(parent, _Document):
+        parent_elm = parent.element.body
+    elif isinstance(parent, _Cell):
+        parent_elm = parent._tc
+    else:
+        raise ValueError("ERROR")
+
+    for child in parent_elm.iterchildren():
+        if isinstance(child, CT_P):
+            yield _Paragraph(child, parent)
+        elif isinstance(child, CT_Tbl):
+            yield _Table(child, parent)
+
+#Utility function 2: to convert docx table to pandas dataframe
+def docx_table(block):
+    table=block
+    data = [[cell.text for cell in row.cells] for row in table.rows]
+    df = pd.DataFrame(data)
+    col_count = len(df.columns)
+    header_row = ["COL"+str(i+1) for i in range(col_count)]
+    df = pd.DataFrame(data, columns = header_row)
+    return df
+
+# Function to fetch all contents of the section with the given section header text from the docx file in the
+# given document path
+def getSectionContent(section_header, next_section_header, doc_path):
+    document = Document(doc_path)
+    flg_match_found = 0
+    p = 0
+    t = 0
+    section_contents_dict = {}
+
+    for block in iter_block_items(document):
+        # First, identify the given section
+        if isinstance(block, _Paragraph):
+            if (block.text.lower() == section_header.lower()):
+                # If match found, set the flag as 1 and set the Header key,value of the output dict
+                flg_match_found = 1
+                section_contents_dict["Header"] =  block.text
+                continue
+
+        #If match is found, proceed to populate the output dict with the paragraph and table items in the section
+        # till the next section start
+        if flg_match_found == 1:
+            if isinstance(block, _Paragraph):
+                if (block.text.lower() == next_section_header.lower()):
+                    break
+                else:
+                    p = p + 1
+                    section_contents_dict["Para-" + str(p)] = block.text
+            elif isinstance(block, _Table):
+                t = t + 1
+                section_contents_dict["Table-" + str(t)] = docx_table(block)
+
+        else:
+            continue
+    return section_contents_dict
+
+
+def extract_sections(doc_path):
+    doc = Document(doc_path)
+    paragraphs = list(doc.paragraphs)
+
+    exclusion_text = []
+    in_exclusion_section = False
+
+    for para in paragraphs:
+        text = para.text.strip()
+        style = para.style.name if para.style else ""
+
+        if not text:
+            continue
+
+        if style.startswith("Heading") and "exclusion criteria" in text.lower():
+            # print(f"[INFO] Found start of exclusion criteria at heading: {text}")
+            in_exclusion_section = True
+            continue
+
+        if in_exclusion_section:
+            if style.startswith("Heading") and "lifestyle considerations" in text.lower():
+                # print(f"[INFO] Found end of exclusion criteria at heading: {text}")
+                break
+            exclusion_text.append(text)
+
+    full_text = "\n".join(p.text for p in paragraphs if p.text.strip())
+    exclusion_section_text = "\n".join(exclusion_text)
+
+    # print(f"[INFO] Total full text length: {len(full_text)} characters")
+    # print(f"[INFO] Exclusion section length: {len(exclusion_section_text)} characters")
+
+    return full_text, exclusion_section_text
+
+# NER with token length awareness
+def extract_entities(text, model_name, entity_type_filter=None):
+    ner = pipeline("ner", model=model_name, aggregation_strategy="max")
+    CHUNK_SIZE = 400  # Number of words per chunk
+    words = text.split()
+    chunks = [" ".join(words[i:i+CHUNK_SIZE]) for i in range(0, len(words), CHUNK_SIZE)]
+
+    all_entities = []
+    # print(f"[INFO] Running NER on {len(chunks)} chunk(s)...")
+    for i, chunk in enumerate(chunks):
+        # print(f"  ↪ Chunk {i+1}/{len(chunks)}: {len(chunk)} characters")
+        try:
+            entities = ner(chunk)
+            filtered = [e['word'].strip() for e in entities if entity_type_filter is None or e['entity_group'] in entity_type_filter]
+            all_entities.extend(filtered)
+        except Exception as e:
+            print(f"[ERROR] NER failed on chunk {i+1}: {e}")
+
+    deduped = list(set(all_entities))
+    # print(f"[INFO] Extracted {len(deduped)} unique entities from text")
+    return deduped
+
+# Main processing
+def process_protocol(file_path, output_path="extracted_data.json"):
+    full_text, exclusion_text = extract_sections(file_path)
+
+    # print("Extracting medications from full protocol...")
+    all_meds = extract_entities(full_text, "d4data/biomedical-ner-all", ["Medication"])
+
+    # print("Extracting medications from exclusion criteria...")
+    exclusion_meds = extract_entities(exclusion_text, "d4data/biomedical-ner-all", ["Medication"])
+
+    # print("Extracting diseases from full protocol...")
+    all_diseases = extract_entities(full_text, "raynardj/ner-disease-ncbi-bionlp-bc5cdr-pubmed")
+
+    # print("Extracting diseases from exclusion criteria...")
+    exclusion_diseases = extract_entities(exclusion_text, "raynardj/ner-disease-ncbi-bionlp-bc5cdr-pubmed")
+
+    final_meds = sorted(set(all_meds) - set(exclusion_meds))
+    final_diseases = sorted(set(all_diseases) - set(exclusion_diseases))
+
+    # print(f"\n[SUMMARY]")
+    # print(f"  All medications: {len(all_meds)}")
+    # print(f"  Exclusion medications: {len(exclusion_meds)}")
+    # print(f"  Final medications (after exclusion): {len(final_meds)}")
+
+    # print(f"  All diseases: {len(all_diseases)}")
+    # print(f"  Exclusion diseases: {len(exclusion_diseases)}")
+    # print(f"  Final diseases (after exclusion): {len(final_diseases)}")
+
+    result = {
+            "medications": final_meds,
+            "diseases": final_diseases
+        }
+    
+
+    return result
