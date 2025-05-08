@@ -1,6 +1,5 @@
-import os
 import asyncio
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel
 
 # Import your extractor functions
@@ -15,7 +14,7 @@ from utils.extract_data import (
 
 app = FastAPI(
     title="Protocol Document Extractor API",
-    version="1.0.0"
+    version="1.1.0"
 )
 
 class FilePathRequest(BaseModel):
@@ -25,41 +24,107 @@ async def validate_file_path(path: str):
     """
     Ensure the given file path exists and is a .docx.
     """
-    if not os.path.isfile(path) or not path.lower().endswith(".docx"):
-        raise HTTPException(status_code=404, detail=f"File not found or not a .docx: {path}")
+    if not os.path.isfile(path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"File not found: {path}"
+        )
+    if not path.lower().endswith(".docx"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid file type (expected .docx): {path}"
+        )
 
-@app.post("/extract/title")
+@app.get("/", response_model=dict)
+async def root_check():
+    return {"status": "API is running"}
+
+@app.post("/extract/title", response_model=dict)
 async def extract_title(request: FilePathRequest):
     await validate_file_path(request.file_path)
-    title = await asyncio.to_thread(title_extractor, request.file_path)
-    return {"title": title}
+    try:
+        title = await asyncio.to_thread(title_extractor, request.file_path)
+        return {"title": title}
 
-@app.post("/extract/amendment")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error extracting title: {e}"
+        )
+
+@app.post("/extract/amendment", response_model=dict)
 async def extract_amendment(request: FilePathRequest):
     await validate_file_path(request.file_path)
-    amendment = await asyncio.to_thread(amendment_date_extractor, request.file_path)
-    return {"amendment": amendment}
+    try:
+        amendment = await asyncio.to_thread(amendment_date_extractor, request.file_path)
+        return {"amendment": amendment}
 
-@app.post("/extract/age")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error extracting amendment date: {e}"
+        )
+
+@app.post("/extract/age", response_model=dict)
 async def extract_age(request: FilePathRequest):
     await validate_file_path(request.file_path)
-    ages = await asyncio.to_thread(age_extractor, request.file_path)
-    return {"age": ages}
+    try:
+        ages = await asyncio.to_thread(age_extractor, request.file_path)
+        return {"age": ages}
 
-@app.post("/extract/weight")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error extracting age: {e}"
+        )
+
+@app.post("/extract/weight", response_model=dict)
 async def extract_weight(request: FilePathRequest):
     await validate_file_path(request.file_path)
-    weight_info = await asyncio.to_thread(weight_extractor, request.file_path)
-    return {"weight_criteria": weight_info}
+    try:
+        weight_info = await asyncio.to_thread(weight_extractor, request.file_path)
+        return {"weight_criteria": weight_info}
 
-@app.post("/extract/participants")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error extracting weight criteria: {e}"
+        )
+
+@app.post("/extract/participants", response_model=dict)
 async def extract_participants(request: FilePathRequest):
     await validate_file_path(request.file_path)
-    participants = await asyncio.to_thread(participant_count_extractor, request.file_path)
-    return {"participants": participants}
+    try:
+        participants = await asyncio.to_thread(participant_count_extractor, request.file_path)
+        return {"participants": participants}
 
-@app.post("/extract/ratio")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error extracting participants: {e}"
+        )
+
+@app.post("/extract/ratio", response_model=dict)
 async def extract_ratio(request: FilePathRequest):
     await validate_file_path(request.file_path)
-    ratios = await asyncio.to_thread(ratio_extractor, request.file_path)
-    return {"ratios": ratios}
+    try:
+        ratios = await asyncio.to_thread(ratio_extractor, request.file_path)
+        return {"ratios": ratios}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error extracting ratio: {e}"
+        )
