@@ -1,0 +1,99 @@
+
+
+import re
+import spacy
+from docx import Document
+
+def participant_count_extractor(file_path):
+    sample_size_heading_pattern = re.compile(r"^\s*(\d+(\.\d+)*)?\s*NUMBER OF PARTICIPANTS\s*$", re.IGNORECASE)
+    doc = Document(file_path)
+
+    found_sample_size = False
+    section_text = []
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+
+        if sample_size_heading_pattern.match(text):
+            found_sample_size = True
+            continue
+
+        if found_sample_size:
+            if para.style.name.startswith("Heading"):
+                break
+            section_text.append(text)
+
+    if not section_text:
+        return [{"text": "No NUMBER OF PARTICIPANTS section found", "value": None, "score": 0}]
+
+    combined_text = ".\n".join(section_text)
+    return extracted_participant_counts_from_text(combined_text)
+
+def extracted_participant_counts_from_text(text):
+    results = []
+    nlp = spacy.load("en_core_web_sm")
+    doc = nlp(text)
+
+    for sent in doc.sents:
+        sent_text = sent.text.strip()
+        sent_lower = sent.text.lower()
+        if "participants" not in sent_lower:
+            continue
+
+        candidate_values = []
+        for ent in sent.ents:
+            if ent.label_ == "CARDINAL":
+                if re.search(r"\b(total|approximately|maximum|at least|enroll|overall|up to|target)\b", sent_lower):
+                    match = re.search(r"\d+[\d,\.]*", ent.text)
+                    if match:
+                        try:
+                            value = int(float(match.group(0).replace(",", "")))
+                            # Assign a score based on heuristics
+                            score = 1.0
+                            if "total" in sent_lower:
+                                score += 0.5
+                            if "approximately" in sent_lower:
+                                score += 0.3
+                            if "target" in sent_lower:
+                                score += 0.2
+                            candidate_values.append({"value": value, "score": score, "text": sent_text})
+                        except ValueError:
+                            continue
+
+        results.extend(candidate_values)
+
+    return results
+
+def ratio_extractor(file_path):
+    doc = Document(file_path)
+    
+    ratio_keyword_pattern = re.compile(r"\bratio\b", re.IGNORECASE)
+    ratio_pattern = re.compile(r"\b(\d+\s*:\s*\d+(?:\s*:\s*\d+)*)\b")
+
+    results = []
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if not text:
+            continue
+
+        if ratio_keyword_pattern.search(text):
+            sentences = re.split(r'(?<=[.!?])\s+', text)
+            for sentence in sentences:
+                if ratio_keyword_pattern.search(sentence):
+                    match = ratio_pattern.search(sentence)
+                    if match:
+                        raw_ratio = match.group().replace(" ", "")
+                        parts = list(map(int, raw_ratio.split(":")))
+                        length_score = 1.0 if len(parts) == 2 else 0.8
+                        balance_score = 1.0 if max(parts) / min(parts) <= 5 else 0.6
+                        score = length_score + balance_score
+                        results.append({
+                            "text": sentence,
+                            "value": raw_ratio,
+                            "score": score
+                        })
+
+    if not results:
+        return [{"text": "No ratio found", "value": None, "score": 0}]
+    return results
