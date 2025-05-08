@@ -1,0 +1,65 @@
+import os
+import asyncio
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+
+# Import your extractor functions
+from utils.extract_data import (
+    title_extractor,
+    amendment_date_extractor,
+    age_extractor,
+    weight_extractor,
+    participant_count_extractor,
+    ratio_extractor
+)
+
+app = FastAPI(
+    title="Protocol Document Extractor API",
+    version="1.0.0"
+)
+
+class FilePathRequest(BaseModel):
+    file_path: str
+
+async def validate_file_path(path: str):
+    """
+    Ensure the given file path exists and is a .docx.
+    """
+    if not os.path.isfile(path) or not path.lower().endswith(".docx"):
+        raise HTTPException(status_code=404, detail=f"File not found or not a .docx: {path}")
+
+@app.post("/extract/title")
+async def extract_title(request: FilePathRequest):
+    await validate_file_path(request.file_path)
+    title = await asyncio.to_thread(title_extractor, request.file_path)
+    return {"title": title}
+
+@app.post("/extract/amendment")
+async def extract_amendment(request: FilePathRequest):
+    await validate_file_path(request.file_path)
+    amendment = await asyncio.to_thread(amendment_date_extractor, request.file_path)
+    return {"amendment": amendment}
+
+@app.post("/extract/age")
+async def extract_age(request: FilePathRequest):
+    await validate_file_path(request.file_path)
+    ages = await asyncio.to_thread(age_extractor, request.file_path)
+    return {"age": ages}
+
+@app.post("/extract/weight")
+async def extract_weight(request: FilePathRequest):
+    await validate_file_path(request.file_path)
+    weight_info = await asyncio.to_thread(weight_extractor, request.file_path)
+    return {"weight_criteria": weight_info}
+
+@app.post("/extract/participants")
+async def extract_participants(request: FilePathRequest):
+    await validate_file_path(request.file_path)
+    participants = await asyncio.to_thread(participant_count_extractor, request.file_path)
+    return {"participants": participants}
+
+@app.post("/extract/ratio")
+async def extract_ratio(request: FilePathRequest):
+    await validate_file_path(request.file_path)
+    ratios = await asyncio.to_thread(ratio_extractor, request.file_path)
+    return {"ratios": ratios}
