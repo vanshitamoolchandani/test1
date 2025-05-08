@@ -128,3 +128,84 @@ async def extract_ratio(request: FilePathRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error extracting ratio: {e}"
         )
+
+@app.post("/extract/therapeutic-area", response_model=dict)
+async def extract_therapeutic_area(request: TitleRequest):
+    try:
+        result = await asyncio.to_thread(therapeutic_area_extractor, request.title)
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error extracting therapeutic area: {e}"
+        )
+
+@app.post("/extract/image-text", response_model=dict)
+async def extract_image_text(request: FilePathRequest):
+    await validate_file_path(request.file_path)
+    try:
+        folder = await asyncio.to_thread(image_text_extractor, request.file_path)
+        return {"image_folder": folder}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error extracting image text: {e}"
+        )
+
+@app.post("/extract/arm-cohort-tables", response_model=dict)
+async def extract_arm_cohort_tables(request: FilePathRequest):
+    await validate_file_path(request.file_path)
+    try:
+        tables = await asyncio.to_thread(arm_cohort_table_extractor, request.file_path)
+        return {"arm_cohort_tables": tables}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error extracting arm/cohort tables: {e}"
+        )
+
+@app.post("/extract/inclusion-count", response_model=dict)
+async def extract_inclusion_count(request: FilePathRequest):
+    await validate_file_path(request.file_path)
+    try:
+        counts = await asyncio.to_thread(inclusion_count_extractor, request.file_path)
+        return {"inclusion_counts": counts}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error extracting inclusion counts: {e}"
+        )
+
+@app.post("/extract/exclusion-count", response_model=dict)
+async def extract_exclusion_count(request: FilePathRequest):
+    await validate_file_path(request.file_path)
+    try:
+        counts = await asyncio.to_thread(exclusion_count_extractor, request.file_path)
+        return {"exclusion_counts": counts}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error extracting exclusion counts: {e}"
+        )
+
+@app.post("/extract/full-protocol", response_model=dict)
+async def extract_full_protocol(request: FilePathRequest):
+    await validate_file_path(request.file_path)
+    try:
+        data = await asyncio.to_thread(process_protocol, request.file_path)
+        return {"protocol_data": data}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing protocol: {e}"
+        )
