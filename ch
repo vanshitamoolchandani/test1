@@ -56,7 +56,7 @@ def AbbreviationFirstOccurence(self, pt_abbr_list):
                                             has_first_occ_and_full_form.append(abbr) 
                                     except:
                                         pass                                    
-                                    first_occurence.append({'name' : abbr, 'extracted':match_csr_text_abbr, "description":abbr_table_dict[abbr], 'status':'Found01',"desc_occurrence":""})
+                                    first_occurence.append({'name' : abbr, 'extracted':match_csr_text_abbr, "description":abbr_table_dict[abbr], 'status':'Found',"desc_occurrence":""})
                                     matched=True
                                     new_list.append(abbr)
                                     print(f"new_list: {new_list}")
@@ -64,7 +64,7 @@ def AbbreviationFirstOccurence(self, pt_abbr_list):
                                     break
                     
                     if not matched  and abbr not in new_list:
-                        first_occurence.append({'name' : abbr, 'extracted':"", 'description':abbr_table_dict[abbr], 'status':'Not Found01',"desc_occurrence":""})
+                        first_occurence.append({'name' : abbr, 'extracted':"", 'description':abbr_table_dict[abbr], 'status':'Not Found',"desc_occurrence":""})
                         new_list.append(abbr)
                         
                 # Add status of those abbr whose description exists post first occurrence exist
@@ -73,9 +73,9 @@ def AbbreviationFirstOccurence(self, pt_abbr_list):
 
             if matched == False and abbr not in new_list:
                 # Add status of those abbr whose description exists but first occurrence does not exist
-                desc_occurrence = "Not Present01"
+                desc_occurrence = "Not Present"
                 if description_found:
-                    desc_occurrence = "Present01"
+                    desc_occurrence = "Present"
                     
                     
                 first_occurence.append({'name' : abbr, 'extracted':"", 'description':abbr_table_dict[abbr], 'status':'Not Found33',"desc_occurrence":desc_occurrence})
@@ -88,9 +88,9 @@ def AbbreviationFirstOccurence(self, pt_abbr_list):
             if len(each["desc_occurrence"]) == 0:
                 abbreviation = each["name"]
                 if abbreviation in description_occurrence or each["name"] in has_first_occ_and_full_form:
-                    each["desc_occurrence"] = "Present00"
+                    each["desc_occurrence"] = "Present"
                 else:
-                    each["desc_occurrence"] = "Not Present00"
+                    each["desc_occurrence"] = "Not Present"
             new_first_occurrence.append(each)
         
         first_occurence = new_first_occurrence
