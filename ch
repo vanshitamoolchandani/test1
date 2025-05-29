@@ -18,16 +18,19 @@ def AbbreviationFirstOccurence(self, pt_abbr_list):
             for csr_text in full_extract:
                 if abbr_table_dict[abbr].lower() in csr_text.lower():
                     description_found = True
+                print(f"Checking text: '{csr_text[:30]}'")
                 skip = False
                 match_patterns= self.abbr_match_patterns(abbr_clean, abbr, csr_text)
-                
+                print(f"Found Match: '{match_patterns}'")
                 #Check full form of abbr present in paragraph or not
                 full_form_found = False
                 if abbr_table_dict[abbr].lower() in csr_text.lower(): 
                     full_form_found = True
+                print(f"Full form found: '{full_form_found}'")
                 
                 if match_patterns or full_form_found :
                     match_patterns_pos = self.abbr_match_patterns_pos2(abbr_clean, abbr, csr_text)
+                    print(f" match_patterns_pos: '{match_patterns_pos}'")
                     match_dict = {}
                     counter = 0
 #                    break
@@ -35,19 +38,25 @@ def AbbreviationFirstOccurence(self, pt_abbr_list):
                         if abbr_pattern.format(abbr_dict=abbr_table_dict[abbr], abbr=abbr).lower() in csr_text.lower() or abbr_pattern.format(abbr_dict=self.cleanText_abbr(abbr_table_dict[abbr], removepunc=True), abbr=abbr).lower() in csr_text.lower():
                             counter += 1
                             match_dict[csr_text] = [counter, abbr_pattern]
+                            print(f"pattern match: '{abbr_pattern}'")
                             if len(match_dict)>0:
                                 match_csr_text = min(match_dict, key=match_dict.get)
                                 match_abbr_pattern = match_dict[match_csr_text][1]
+                                print(f"Matched CSR Text: '{match_csr_text[:30]}'")
+                                print(f"Ussing pattern: '{match_abbr_pattern}'")
                                 match_csr_text_abbr = self.find_pos(match_csr_text, match_abbr_pattern.format(abbr_dict=abbr_table_dict[abbr], abbr=abbr))
                                 match_csr_text_abbr_pos = self.find_pos2(match_csr_text, match_abbr_pattern.format(abbr_dict=self.cleanText_abbr(abbr_table_dict[abbr], removepunc=True), abbr=abbr))
                                 if match_csr_text_abbr=="":
                                     match_csr_text_abbr = self.find_pos(match_csr_text, match_abbr_pattern.format(abbr_dict=self.cleanText_abbr(abbr_table_dict[abbr], removepunc=True), abbr=abbr))
                                 
                                 pos_match = False
+
                                 try:
                                     pos_match =  int(match_csr_text_abbr_pos[0]) <  int(match_patterns_pos[0])   <   int(match_csr_text_abbr_pos[1]) 
                                 except:
                                     pass
+                                print(f"match_csr_text_abbr_pos: {match_csr_text_abbr_pos}', pos_match: '{pos_match}'")
+                                print(f"Append conditions: abbr = {abbr}, in new_list = {abbr in new_list}, pos_match = {pos_match}") 
                                 if abbr not in new_list and pos_match:
                                     #if para has first occurrence and also full form of abbr as second occurrence within
                                     try:
@@ -55,17 +64,20 @@ def AbbreviationFirstOccurence(self, pt_abbr_list):
                                         if csr_text[match_pos_till_first_occ:].count(abbr_table_dict[abbr].lower()) > 0 :
                                             has_first_occ_and_full_form.append(abbr) 
                                     except:
-                                        pass                                    
+                                        pass   
+                                    print(f"Appending first occ: abbr = {abbr}, extarcted = {match_csr_text_abbr[:30]}, pos_match = {pos_match}")                                 
                                     first_occurence.append({'name' : abbr, 'extracted':match_csr_text_abbr, "description":abbr_table_dict[abbr], 'status':'Found',"desc_occurrence":""})
                                     matched=True
                                     new_list.append(abbr)
-                                    print(f"new_list: {new_list}")
+                                    print(f"Added to first occurance(new_list): {abbr}")
                                     skip = True
                                     break
                     
-                    if not matched  and abbr not in new_list:
-                        first_occurence.append({'name' : abbr, 'extracted':"", 'description':abbr_table_dict[abbr], 'status':'Not Found',"desc_occurrence":""})
-                        new_list.append(abbr)
+                    if not matched:
+                        if abbr not in new_list:
+                            first_occurence.append({'name' : abbr, 'extracted':"", 'description':abbr_table_dict[abbr], 'status':'Not Found',"desc_occurrence":""})
+                            new_list.append(abbr)
+                        print(f"Narked as not found(new_list): {abbr}")
                         
                 # Add status of those abbr whose description exists post first occurrence exist
                 if not skip and abbr in new_list and abbr_table_dict[abbr].lower() in csr_text.lower():
@@ -77,8 +89,8 @@ def AbbreviationFirstOccurence(self, pt_abbr_list):
                 if description_found:
                     desc_occurrence = "Present"
                     
-                    
-                first_occurence.append({'name' : abbr, 'extracted':"", 'description':abbr_table_dict[abbr], 'status':'Not Found33',"desc_occurrence":desc_occurrence})
+                print(f"Adding Not found: abbr = {abbr}, matched = {matched}, in new_list: {new_list}, description_found: {description_found}") 
+                first_occurence.append({'name' : abbr, 'extracted':"", 'description':abbr_table_dict[abbr], 'status':'Not Found',"desc_occurrence":desc_occurrence})
                 new_list.append(abbr)
                 
                 
@@ -94,6 +106,6 @@ def AbbreviationFirstOccurence(self, pt_abbr_list):
             new_first_occurrence.append(each)
         
         first_occurence = new_first_occurrence
-        extract_crf = ast.literal_eval(first_occurence)
-        print(f"first_occurence at {datetime.now()}: {first_occurence[2]}")
+        print(f"Final output: {first_occurence}")
+                
         return first_occurence
