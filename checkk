@@ -1,0 +1,120 @@
+def AbbreviationFirstOccurence(self, pt_abbr_list):
+    full_extract = self.getFullExtract_abbr().split("\n")
+    abbr_table = self.getAbbrTable(pt_abbr_list)
+    abbr_patterns = [
+        '{abbr_dict} {abbr},', '{abbr_dict}({abbr})', '{abbr_dict} ({abbr})',
+        '{abbr_dict}  ({abbr})', '{abbr_dict}s ({abbr})', '{abbr_dict}({abbr}s)',
+        '{abbr_dict} ({abbr}s)', '{abbr_dict}s ({abbr}s)', '{abbr} = {abbr_dict}',
+        '{abbr}={abbr_dict}', '{abbr}={abbr_dict};', '{abbr}={abbr_dict}:',
+        '{abbr_dict} [{abbr}]', '{abbr_dict} ({abbr}'
+    ]
+
+    abbr_table_dict = {self.cleanText_abbr(rec['abbreviation']): rec['description'] for rec in abbr_table.to_dict(orient='records')}
+    first_occurence = []
+    description_occurrence = []
+    has_first_occ_and_full_form = []
+
+    for abbr in abbr_table_dict.keys():
+        abbr_clean = self.cleanText_abbr(abbr)
+        matched = False
+        new_list = []
+        foundAbbrList = []
+        description_found = False
+
+        for csr_text in full_extract:
+            if abbr_table_dict[abbr].lower() in csr_text.lower():
+                description_found = True
+
+            match_patterns = self.abbr_match_patterns(abbr_clean, abbr, csr_text)
+            full_form_found = abbr_table_dict[abbr].lower() in csr_text.lower()
+
+            if match_patterns or full_form_found:
+                match_patterns_pos = self.abbr_match_patterns_pos2(abbr_clean, abbr, csr_text)
+                match_dict = {}
+                counter = 0
+
+                for abbr_pattern in abbr_patterns:
+                    pattern_variants = [
+                        abbr_pattern.format(abbr_dict=abbr_table_dict[abbr], abbr=abbr),
+                        abbr_pattern.format(abbr_dict=self.cleanText_abbr(abbr_table_dict[abbr], removepunc=True), abbr=abbr),
+                        abbr_pattern.format(abbr_dict=abbr_table_dict[abbr], abbr=abbr) + ';',
+                        abbr_pattern.format(abbr_dict=abbr_table_dict[abbr], abbr=abbr) + ':'
+                    ]
+
+                    for variant in pattern_variants:
+                        if variant.lower() in csr_text.lower():
+                            counter += 1
+                            match_dict[csr_text] = [counter, variant]
+
+                            if match_dict:
+                                match_csr_text = min(match_dict, key=match_dict.get)
+                                match_abbr_pattern = match_dict[match_csr_text][1]
+
+                                match_csr_text_abbr = self.find_pos(match_csr_text, match_abbr_pattern)
+                                match_csr_text_abbr_pos = self.find_pos2(match_csr_text, match_abbr_pattern)
+
+                                if not match_csr_text_abbr and match_csr_text_abbr_pos:
+                                    try:
+                                        start = int(match_csr_text_abbr_pos[0])
+                                        end = int(match_csr_text_abbr_pos[1])
+                                        match_csr_text_abbr = match_csr_text[start:end]
+                                    except:
+                                        pass
+
+                                try:
+                                    pos_match = int(match_csr_text_abbr_pos[0]) < int(match_patterns_pos[0]) < int(match_csr_text_abbr_pos[1])
+                                except:
+                                    pos_match = False
+
+                                if abbr not in new_list and pos_match and match_csr_text_abbr.strip():
+                                    try:
+                                        match_pos_till_first_occ = int(match_csr_text_abbr_pos[1])
+                                        if csr_text[match_pos_till_first_occ:].count(abbr_table_dict[abbr].lower()) > 0:
+                                            has_first_occ_and_full_form.append(abbr)
+                                    except:
+                                        pass
+
+                                    first_occurence.append({
+                                        'name': abbr,
+                                        'extracted': match_csr_text_abbr,
+                                        "description": abbr_table_dict[abbr],
+                                        'status': 'Found',
+                                        "desc_occurrence": ""
+                                    })
+                                    matched = True
+                                    new_list.append(abbr)
+                                    break
+                    if matched:
+                        break
+                if not matched and abbr not in new_list:
+                    first_occurence.append({
+                        'name': abbr,
+                        'extracted': "",
+                        'description': abbr_table_dict[abbr],
+                        'status': 'Not Found',
+                        "desc_occurrence": ""
+                    })
+                    new_list.append(abbr)
+
+            if abbr in new_list and abbr_table_dict[abbr].lower() in csr_text.lower():
+                description_occurrence.append(abbr)
+
+        if not matched and abbr not in new_list:
+            desc_occurrence = "Present" if description_found else "Not Present"
+            first_occurence.append({
+                'name': abbr,
+                'extracted': "",
+                'description': abbr_table_dict[abbr],
+                'status': 'Not Found',
+                "desc_occurrence": desc_occurrence
+            })
+            new_list.append(abbr)
+
+    new_first_occurrence = []
+    for each in first_occurence:
+        if not each["desc_occurrence"]:
+            abbreviation = each["name"]
+            each["desc_occurrence"] = "Present" if abbreviation in description_occurrence or abbreviation in has_first_occ_and_full_form else "Not Present"
+        new_first_occurrence.append(each)
+
+    return new_first_occurrence
