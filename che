@@ -1,0 +1,69 @@
+def AbbreviationFirstOccurence(self, pt_abbr_list):
+    full_extract = self.getFullExtract_abbr().split("\n")
+    abbr_table = self.getAbbrTable(pt_abbr_list)
+    abbr_patterns = [
+        '{abbr_dict} {abbr},', '{abbr_dict}({abbr})', '{abbr_dict} ({abbr})',
+        '{abbr_dict}  ({abbr})', '{abbr_dict}s ({abbr})', '{abbr_dict}({abbr}s)',
+        '{abbr_dict} ({abbr}s)', '{abbr_dict}s ({abbr}s)', '{abbr} = {abbr_dict}',
+        '{abbr}={abbr_dict}', '{abbr}={abbr_dict};', '{abbr}={abbr_dict}:',
+        '{abbr_dict} [{abbr}]', '{abbr_dict} ({abbr}'
+    ]
+
+    abbr_table_dict = {self.cleanText_abbr(rec['abbreviation']): rec['description'] for rec in abbr_table.to_dict(orient='records')}
+    first_occurence = []
+
+    for abbr in abbr_table_dict.keys():
+        abbr_clean = self.cleanText_abbr(abbr)
+        desc_found = False
+        pattern_found = False
+        extracted_text = ""
+        
+        # First pass: Check for description presence
+        for csr_text in full_extract:
+            if abbr_table_dict[abbr].lower() in csr_text.lower():
+                desc_found = True
+                break
+
+        # Second pass: Look for pattern matches
+        for csr_text in full_extract:
+            for abbr_pattern in abbr_patterns:
+                pattern_variants = [
+                    abbr_pattern.format(abbr_dict=abbr_table_dict[abbr], abbr=abbr),
+                    abbr_pattern.format(abbr_dict=self.cleanText_abbr(abbr_table_dict[abbr], removepunc=True), abbr=abbr),
+                    abbr_pattern.format(abbr_dict=abbr_table_dict[abbr], abbr=abbr) + ';',
+                    abbr_pattern.format(abbr_dict=abbr_table_dict[abbr], abbr=abbr) + ':'
+                ]
+                
+                for variant in pattern_variants:
+                    if variant.lower() in csr_text.lower():
+                        match_csr_text_abbr = self.find_pos(csr_text, variant)
+                        if not match_csr_text_abbr:
+                            match_csr_text_abbr_pos = self.find_pos2(csr_text, variant)
+                            if match_csr_text_abbr_pos:
+                                try:
+                                    start = int(match_csr_text_abbr_pos[0])
+                                    end = int(match_csr_text_abbr_pos[1])
+                                    match_csr_text_abbr = csr_text[start:end]
+                                except:
+                                    continue
+                        
+                        if match_csr_text_abbr and match_csr_text_abbr.strip():
+                            extracted_text = match_csr_text_abbr
+                            pattern_found = True
+                            break
+                if pattern_found:
+                    break
+            if pattern_found:
+                break
+
+        # Determine final status
+        status = 'Found' if pattern_found else 'Not Found'
+        first_occurence.append({
+            'name': abbr,
+            'extracted': extracted_text,
+            'description': abbr_table_dict[abbr],
+            'status': status,
+            'desc_occurrence': "Present" if desc_found else "Not Present"
+        })
+
+    return first_occurence
