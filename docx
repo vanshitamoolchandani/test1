@@ -1,73 +1,29 @@
-package com.adobe.pdfservices;
+def count_abbr_occurrences(csr_sections, all_section_headings, abbr, csr):
+    count = 0
+    pattern = f"(?<=[\s\(“”\‘’\"\[]){re.escape(abbr)}s?(?=[“”\‘’\"\s,=\)\]\.\;\:]|$)"
+    pattern2 = f"^{re.escape(abbr)}s?(?=[\"\s,=\)\]\.\;\:]|$)"          
+    for sec in all_section_headings:
+        # skip reference section
+        # if "reference" in sec.lower():
+        if "reference" in sec.lower().split(" ")[0:2] or "references" in sec.lower().split(" ")[0:2] or ("references" in sec.lower().split(" ") and "list" in sec.lower().split(" ")):
+            continue
+            # check if section heading does not start with numerical character
+        if not str(sec).split("_")[0].isdigit():
+            if len(csr_sections[sec]) > 999999:
+                chunks = [csr_sections[sec][i:i + 999999] for i in range(0, len(csr_sections[sec]), 999999)]
+                for chunk in chunks:
+                    new_abbr_found = len(re.findall(pattern, chunk))
+                    count += new_abbr_found
+            else:
+                new_abbr_found = len(re.findall(pattern, csr_sections[sec]))
+                count += new_abbr_found
+                new_abbr_found2 = len(re.findall(pattern2, csr_sections[sec]))
+                count += new_abbr_found2
+#                if abbr == "CHIKV" and len(re.findall(pattern, csr_sections[sec]))>=1:
+#                    print("count 0=00=0", count)
+#                    print("TEXT 0=0=0=0", csr_sections[sec])
+    return count
 
-import com.adobe.pdfservices.operation.PDFServices;
-import com.adobe.pdfservices.operation.PDFServicesMediaType;
-import com.adobe.pdfservices.operation.PDFServicesResponse;
-import com.adobe.pdfservices.operation.auth.Credentials;
-import com.adobe.pdfservices.operation.auth.ServicePrincipalCredentials;
-import com.adobe.pdfservices.operation.exception.SDKException;
-import com.adobe.pdfservices.operation.exception.ServiceApiException;
-import com.adobe.pdfservices.operation.exception.ServiceUsageException;
-import com.adobe.pdfservices.operation.io.Asset;
-import com.adobe.pdfservices.operation.io.StreamAsset;
-import com.adobe.pdfservices.operation.pdfjobs.jobs.ExportPDFJob;
-import com.adobe.pdfservices.operation.pdfjobs.params.exportpdf.ExportPDFParams;
-import com.adobe.pdfservices.operation.pdfjobs.params.exportpdf.ExportPDFTargetFormat;
-import com.adobe.pdfservices.operation.pdfjobs.result.ExportPDFResult;
-import org.apache.commons.io.IOUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 
-public class App {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(App.class);
-
-    public static void main(String[] args) {
-        try (InputStream inputStream = Files
-                .newInputStream(new File("src/main/resources/Bodea Brochure.pdf").toPath())) {
-
-            // Initial setup, create credentials instance
-            Credentials credentials = new ServicePrincipalCredentials(
-                    System.getenv("PDF_SERVICES_CLIENT_ID"),
-                    System.getenv("PDF_SERVICES_CLIENT_SECRET"));
-
-            // Creates a PDF Services instance
-            PDFServices pdfServices = new PDFServices(credentials);
-
-            // Creates an asset(s) from source file(s) and upload
-            Asset asset = pdfServices.upload(inputStream, PDFServicesMediaType.PDF.getMediaType());
-
-            // Create parameters for the job
-            ExportPDFParams exportPDFParams = ExportPDFParams.exportPDFParamsBuilder(ExportPDFTargetFormat.DOCX)
-                    .build();
-
-            // Creates a new job instance
-            ExportPDFJob exportPDFJob = new ExportPDFJob(asset, exportPDFParams);
-
-            // Submit the job and gets the job result
-            String location = pdfServices.submit(exportPDFJob);
-            PDFServicesResponse<ExportPDFResult> pdfServicesResponse = pdfServices.getJobResult(location,
-                    ExportPDFResult.class);
-
-            // Get content from the resulting asset(s)
-            Asset resultAsset = pdfServicesResponse.getResult().getAsset();
-            StreamAsset streamAsset = pdfServices.getContent(resultAsset);
-
-            // Creates an output stream and copy stream asset's content to it
-            Files.createDirectories(Paths.get("output/"));
-            OutputStream outputStream = Files.newOutputStream(new File("output/Bodea Brochure.docx").toPath());
-            LOGGER.info("Saving asset at output/Bodea Brochure.docx");
-            IOUtils.copy(streamAsset.getInputStream(), outputStream);
-
-        } catch (ServiceApiException | IOException | SDKException | ServiceUsageException e) {
-            LOGGER.error("Exception encountered while executing operation", e);
-        }
-    }
-}
