@@ -1,0 +1,56 @@
+    def get_table_source_match(table1_values, table2_values, row_scores, col_scores, extract_thresh_dict=None):
+        res = []
+        for t1_row_id, t1_row_values in enumerate(table1_values):
+            ## get table 2 records from row mappings
+            t2_row_matched = row_scores[t1_row_id]
+            t2_row_values = table2_values[t2_row_matched]
+            rowFlag = False
+            ## saving column zero match status
+            col_zero_match_status = ""
+            for t1_col_id, t1_col_val in enumerate(t1_row_values):
+                if t1_col_id == 0:
+                    t2_col_matched = 0
+                    t2_col_val = t2_row_values[0]
+                else:
+                    t2_col_matched = col_scores[t1_col_id]
+                    t2_col_val = t2_row_values[t2_col_matched]
+                    
+                ##if first column status is NO MATCH, assigning other column records to NO MATCH
+                if col_zero_match_status == "No Match":
+                    score = 0.0
+                    match_status = "No Match"
+                else:
+                    if  t1_col_id == 0:
+                        score = float(round(csr.cosine_similarity_bert(clean_table_cell(t1_col_val.lower()), clean_table_cell(t2_col_val.lower())),2))
+                    else:
+                        score = float(round(csr.cosine_similarity_tf(clean_table_cell(t1_col_val.lower()), clean_table_cell(t2_col_val.lower())),2))
+                    match_status = getMatchStatus(score)
+                ##If first column, saving the status
+                if t1_col_id == 0:
+                    col_zero_match_status = match_status
+
+                res_it_dict = {'intext_row_id':t1_row_id,'intext_col_id':t1_col_id,'intext_value':t1_col_val,
+                               'posttext_row_id':t2_row_matched,'posttext_col_id':t2_col_matched,'posttext_value':t2_col_val,
+                               'match_score':score, 'match_status' : match_status}
+
+                if extract_thresh_dict:
+                    ## dont check threshold criteria for first column (which has row names)
+                    if t1_col_id == 0 :
+                        if score == 1:
+                            thresh_res = {"status": "Pass","reason": ""}
+                        else:
+                            if match_status == "No Match":
+                                rowFlag = True
+                            thresh_res = {"status": "Find","reason": "value does not match with " + t2_col_val}
+                    ## if cell value doesnt match, no need to check threshold criteria
+                    ## also if row header is not available , then all records in row should be not ch
+                    elif match_status != "Match" or rowFlag :
+                        thresh_res = {"status": "Find","reason": "value does not match with "+ t2_col_val}
+                    else:
+                        thresh_res = thresh_check(t1_col_val,extract_thresh_dict)
+
+                    res_it_dict['thresh_check'] = thresh_res
+
+                res.append(res_it_dict)
+
+        return res
