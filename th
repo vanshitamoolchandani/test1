@@ -1,56 +1,402 @@
-    def get_table_source_match(table1_values, table2_values, row_scores, col_scores, extract_thresh_dict=None):
-        res = []
-        for t1_row_id, t1_row_values in enumerate(table1_values):
-            ## get table 2 records from row mappings
-            t2_row_matched = row_scores[t1_row_id]
-            t2_row_values = table2_values[t2_row_matched]
-            rowFlag = False
-            ## saving column zero match status
-            col_zero_match_status = ""
-            for t1_col_id, t1_col_val in enumerate(t1_row_values):
-                if t1_col_id == 0:
-                    t2_col_matched = 0
-                    t2_col_val = t2_row_values[0]
-                else:
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Sun Aug 13 10:42:03 2023
+
+@author: GENINVO\pranith.g200
+"""
+
+import re
+import pandas as pd
+import numpy as np
+from HelperFunctions import getMatchStatus, thresh_check
+import traceback
+
+alphaNumericMappings = {" 1 ": " A "," 2 " : " B "}
+
+## Removing the unneccessary values from column record
+def cleanColumnRecord(value,mappings=False):
+    try:
+        value = re.sub(r'\$\$',' ',value)
+        value = re.sub(r'\n',' ',value)
+        value = re.sub(r'\s{2,}',' ',value)
+        
+        if mappings:
+            for key, val in alphaNumericMappings.items():
+                value = value.replace(key,val)
+                
+        return value.strip()
+    except:
+        return value
+    
+    
+
+def txt_to_list(txt):
+    txt.strip().replace("(", " ").replace(")", " ").replace("  ", "").lower()
+    txt_list = txt.split(" ")
+    return txt_list
+
+def cleanTable_2_threshold(table_dict):
+    try:
+        res_dict = []
+        for idx, item in enumerate(table_dict):
+            if len(list(item.values())[0])>90 and len(np.unique(list(item.values()))) == 1.0:
+                pass
+            else:
+                if len(table_dict)== idx+1 and "source" in list(item.values())[0] :
+                    continue
+                res_dict.append(item)
+    except:
+        res_dict = table_dict
+    
+    return res_dict
+
+## checking tfl is present in rtf tfl list
+def chkTblcsrSecTFL(table, tfl_list):
+    table = table.capitalize()
+    tfl_list = [ tflNum.capitalize() for tflNum in tfl_list]
+    if table in tfl_list or table.replace("Table","Tables") in tfl_list or table.replace("Table ","T") in tfl_list or table.replace("Table ","T_") in tfl_list or table.replace("Tables ","T") in tfl_list or table.replace("Tables ","T_") in tfl_list or table.replace("Figure ","F") in tfl_list or table.replace("Figures ","F") in tfl_list or table.replace("Figure ","F_") in tfl_list or table.replace("Listing ","L") in tfl_list or table.replace("Listings ","L") in tfl_list or table.replace("Listing ","L_") in tfl_list:
+        return True
+    else:
+        return False
+
+def set_no_match_row_data_to_no_match(res_pt):
+    try:
+        for r in res_pt:
+            if r["intext_col_id"] == 0 and r['thresh_check']["status"]=="No Match" :
+                row_id = r['intext_row_id']            
+            if r["intext_col_id"] == 0 and r['thresh_check']["status"]=="Match":
+                row_id = ""
+            if row_id == r['intext_row_id'] and r["intext_col_id"] != 0:
+                r['thresh_check'] = {'status': 'No Match', 'reason': 'Row header mistmatch'}
+    except Exception as e:
+        print(str(e))
+        pass    
+    return res_pt
+
+## matching the table cell values
+def get_table_source_match_threshold(csr,table1_values, table2_values, row_scores, col_scores, extract_thresh_dict=None,intext_col_has_percent_sign=False, is_postext = False, any_all_tag = "any"):
+    res = []
+    record_row_ids = []
+    record_table_for_not_csr = {}
+    total_columns = 0
+
+    for t1_row_id, t1_row_values in enumerate(table1_values):
+#        print(t1_row_id, t1_row_values)
+#        if not t1_row_id == 0:
+#            continue
+        total_columns = len(t1_row_values)        
+        ## get table 2 records from row mappings
+        t2_row_matched = row_scores[t1_row_id]
+        t2_row_values = table2_values[t2_row_matched]
+        rowFlag = False
+        row_heading_exist_in_csr = True
+        record_table_for_not_csr[t1_row_id] = []
+        for t1_col_id, t1_col_val in enumerate(t1_row_values):
+            if t1_col_id == 0:
+                t2_col_matched = 0
+                t2_col_val = t2_row_values[0]
+                
+            else:
+                try:
                     t2_col_matched = col_scores[t1_col_id]
-                    t2_col_val = t2_row_values[t2_col_matched]
+                except:
+                    t2_col_matched = 0
+                t2_col_val = t2_row_values[t2_col_matched]
+            
+            if intext_col_has_percent_sign and '%' in t2_col_val and '%' not in t1_col_val :
+                t2_col_val_ = t2_col_val.replace('%',"")
+                t1_col_val_ = t1_col_val             
+                
+            elif intext_col_has_percent_sign and '%' in t1_col_val and '%' not in t2_col_val :
+                t1_col_val_ = t1_col_val.replace('%',"")
+                t2_col_val_ = t2_col_val
+            else:
+                t1_col_val_ = t1_col_val
+                t2_col_val_ = t2_col_val
+#            if "," in t1_col_val and not ", " in t1_col_val and "," in t2_col_val and not ", " in t2_col_val:
+            t1_col_val_ = t1_col_val.replace(",", "")
+            t2_col_val_ = t2_col_val.replace(",", "")
+            ## When row header is not matching
+            if t1_col_id > 0  and rowFlag == True:
+                score = "0.0"
+                match_status = "No Match"
+            else:
+#                print("t1_col_val_", t1_col_val_.lower())
+#                print("t2_col_val_", t2_col_val_.lower())
+                score = float(round(csr.cosine_similarity_tf_cpu(t1_col_val_.lower(), t2_col_val_.lower()),2))
+                
+                if score < 1 :
+                    score = float(round(csr.cosine_similarity_tf_cpu(t1_col_val_.replace(" ","").lower(), t2_col_val_.replace(" ","").lower()),2))
                     
-                ##if first column status is NO MATCH, assigning other column records to NO MATCH
-                if col_zero_match_status == "No Match":
-                    score = 0.0
-                    match_status = "No Match"
+                
+                match_status = getMatchStatus(score,0.6)
+                
+
+                    
+            ### Comparing by replacing the ’s present in intext and postext values  ###
+            if t1_col_val.lower().replace("’s","") == t2_col_val.lower().replace("’s","") and t1_col_id == 0 and t2_col_matched == 0:
+                score = 1.0
+                match_status = "Match"
+            if t1_col_val.lower().replace("≥","") == t2_col_val.lower().replace(">=","") and t1_col_id == 0 and t2_col_matched == 0:
+                score = 1.0
+                match_status = "Match"
+                
+            if t1_col_val.lower().replace(">=","") == t2_col_val.lower().replace("≥","") and t1_col_id == 0 and t2_col_matched == 0:
+                score = 1.0
+                match_status = "Match" 
+            
+            t1_col_val_cleaned = t1_col_val.replace("(continued)", "").strip() if t1_col_val.endswith("(continued)") else t1_col_val.replace(" (continued)", "").strip()
+            t2_col_val_cleaned = t2_col_val.replace("(continued)", "").strip() if t2_col_val.endswith("(continued)") else t2_col_val.replace(" (continued)", "").strip()
+        
+            if t1_col_val_cleaned == t2_col_val_cleaned and t1_col_id == 0:
+                score = 1.0
+                match_status = "Match"
+            #Handling if superscript characters like a, b, c is not present at both side of row header of tables, then it must be marked "Not Match"
+            try:
+                supscript_patterns = [r"\ba\b",r"\bb\b",r"\bc\b"]
+                if t1_col_id == 0 and t2_col_matched == 0:
+                    for pattern in supscript_patterns:
+                        if (len(re.findall(pattern, t1_col_val.lower())) > 0 and len(re.findall(pattern, t2_col_val.lower())) == 0) or (len(re.findall(pattern, t2_col_val.lower())) > 0 and len(re.findall(pattern, t1_col_val.lower())) == 0):
+                            match_status = "No Match"
+                            score = 0.6 
+                            break
+            except:
+                pass
+                   
+                
+            res_it_dict = {'intext_row_id':t1_row_id,'intext_col_id':t1_col_id,'intext_value':t1_col_val,
+                       'posttext_row_id':t2_row_matched,'posttext_col_id':t2_col_matched,'posttext_value':t2_col_val,
+                       'match_score':score, 'match_status' : match_status}
+            
+#            print("res_it_dict 0=0", res_it_dict)
+
+            if extract_thresh_dict:
+                ## dont check threshold criteria for first column (which has row names)
+                if t1_col_id == 0 :
+                    if score == 1:
+                        thresh_res = {"status": "Match","reason": ""}
+                    else:
+                        if match_status == "No Match":
+                            rowFlag = True
+                        row_heading_exist_in_csr = False
+                        thresh_res = {"status": "No Match","reason": "value does not match with " + t2_col_val}
+
+                ## if cell value doesnt match, no need to check threshold criteria
+                ## also if row header is not available , then all records in row should be not ch
+                elif match_status != "Match" or rowFlag :
+                    thresh_res = {"status": "No Match","reason": "value does not match with "+ t2_col_val}
+                    thresh_compare_res = thresh_check(t1_col_val,extract_thresh_dict)
+                    if not row_heading_exist_in_csr and thresh_compare_res["status"] == "Match" and is_postext and "(" in str(t1_col_val):
+                        if any_all_tag == "any":
+                            thresh_res["status"] = "Not in CSR" 
+                        record_row_ids.append(t1_row_id) 
+                        record_table_for_not_csr[t1_row_id].append(t1_col_id)
                 else:
-                    if  t1_col_id == 0:
-                        score = float(round(csr.cosine_similarity_bert(clean_table_cell(t1_col_val.lower()), clean_table_cell(t2_col_val.lower())),2))
+                    thresh_res = thresh_check(t1_col_val,extract_thresh_dict)
+
+                if "reason" in list(thresh_res.keys()) and len(thresh_res["reason"]) == 0 and  "(" not in str(t1_col_val) and "," not in str(t1_col_val) and t1_col_id > 0 :
+                    thresh_res["reason"] = "Percentage value is not present"
+
+                res_it_dict['thresh_check'] = thresh_res
+
+            res.append(res_it_dict)
+            
+    # If threshold status is match and then reason must be matched value
+    for each in res:
+        if each["thresh_check"]["status"] == "Match":
+            each["thresh_check"]["reason"] = each["posttext_value"]          
+            
+    #Update row heading if "Not in CSR" status found in respective row        
+    try:    
+        if is_postext:
+            new_res = []
+            for each in res:
+                
+                if each["intext_row_id"] in record_table_for_not_csr.keys() and len(record_table_for_not_csr[each["intext_row_id"]]) == total_columns and any_all_tag == "all": 
+                   new_object = each.copy()
+                   new_object["thresh_check"]["status"] = "Not in CSR" 
+                   new_res.append(new_object)
+                   
+                if each["intext_row_id"] in record_row_ids and each["intext_col_id"] == 0 and any_all_tag == "any":
+                   new_object = each.copy()
+                   new_object["thresh_check"]["status"] = "Not in CSR" 
+                   new_res.append(new_object)
+                else:
+                    new_res.append(each)
+            return new_res
+    except:
+        pass
+
+    return res
+
+
+def fix_comma_in_sample_size(text):
+    
+    try:
+        found = re.findall('N=[0-9]{0,1},[0-9]{3}',text)
+        if len(found):
+            text = text.replace(found[0], found[0].replace(",",""))
+    except:
+        pass
+    return text
+
+
+
+def filter_result_threshold(res, var, filter_var, section_list):
+    sec_dict = {sec:idx for idx, sec in enumerate(section_list)}
+    try:
+        df = pd.DataFrame(res)
+        #df['row_number'] = np.arange(len(df))
+        #max_idx = df.iloc[df.groupby(var)[filter_var].agg(pd.Series.idxmax)].index
+        #df = df.iloc[max_idx].reset_index(drop=True)
+        df = df.sort_values(by=[var], key=lambda x: x.map(sec_dict))
+        #df = df.sort_values(by=['row_number'])
+        res = df.to_dict(orient='records')
+          
+    except Exception as e:
+#        logging.info(e)
+        pass
+    return res
+
+## Function to check sample size Example- (N=2,345) present at both side of cells then we will make it match even 
+## other different are present
+##Also, if "mild","moderate","severe" these words are not present in both side of columns, mark them no match 
+def is_sample_size_match(CSRCellValue,RTFCellValue):
+    
+    res = False
+    pattNSize = r"\bN\s*(?:\(\s*(\d+)\s*\)|\s*=\s*(\d+))"
+    def getNSampleSize(chk):
+        x,y = chk[0]
+        if x != "":
+            return x
+        if y != "":
+            return y
+        return ""
+    
+    try:
+        csrColumnSample = re.findall(pattNSize, CSRCellValue.replace(",", ""))
+        if len(csrColumnSample) > 0:
+            sampleSizeNum = getNSampleSize(csrColumnSample)
+            rtfAllNumerics = re.findall(r'\b\d+|\d+\.\d+\b', RTFCellValue.replace(",", ""))
+            if sampleSizeNum in rtfAllNumerics or str(sampleSizeNum) in rtfAllNumerics:
+                res =  True
+
+            
+    except:
+        pass
+
+    #if "mild","moderate","severe" these words are not present in both side of columns, mark them no match    
+    try:        
+        if res:
+            word_list = ["mild","moderate","severe"]
+            for _w in word_list:
+                if ( _w in CSRCellValue.lower() and _w not in  RTFCellValue.lower() ) or  ( _w in RTFCellValue.lower() and _w  not in CSRCellValue.lower() ):
+                    res = False
+                    break 
+    except:
+        pass
+            
+    return res
+
+def removeContinuedRows(row_header_list):
+    try:
+        new_row_header_list = []
+        for row_header in row_header_list:
+            if row_header.lower().strip().endswith("(continued)"):
+                new_row_header_list.append("itsawordtonotmakematch")
+            else:
+                new_row_header_list.append(row_header)      
+        #new_row_header_list = [row_header for row_header in row_header_list if not row_header.lower().strip().endswith("(continued)")]
+        return new_row_header_list
+    except:
+        return row_header_list
+
+
+def get_mat_scores_new_threshold(csr,table1, table2, xtype='row', is_rtf = False):
+
+    record_mapping = {}
+    record_mapping_detail = {}
+    record_mapping_detail_list = []
+
+    if xtype == 'row':
+        
+        if is_rtf:
+            rec_table1 = removeContinuedRows(list(table1.iloc[:,0]))
+            rec_table2 = list(table2.iloc[:,0])
+        else:
+            rec_table1 = list(table1.iloc[:,0])
+            rec_table2 = removeContinuedRows(list(table2.iloc[:,0]))
+        
+        if is_rtf:
+            rec_table1_original = removeContinuedRows(list(table1.iloc[:,0]))
+            rec_table2_original = list(table2.iloc[:,0])  
+        else:
+            rec_table1_original = list(table1.iloc[:,0])
+            rec_table2_original = removeContinuedRows(list(table2.iloc[:,0]))            
+        
+    elif xtype == 'column':
+        rec_table1 = list(table1.columns)
+        rec_table2 = list(table2.columns)
+        ## cleaning the column values
+        rec_table1_original = [cleanColumnRecord(val,mappings=True) for val in rec_table1]
+        rec_table2_original = [cleanColumnRecord(val,mappings=True) for val in rec_table2]
+        
+        rec_table1 = [cleanColumnRecord(fix_comma_in_sample_size(val),mappings=True) for val in rec_table1]
+        rec_table2 = [cleanColumnRecord(fix_comma_in_sample_size(val),mappings=True) for val in rec_table2]
+        
+
+    cosine_similarity_mat = csr.cosine_similarity_tf_pipe(rec_table1, rec_table2)
+    for row_tb1 in range(len(rec_table1)):
+        score = 0
+        for row_tb2 in range(len(rec_table2)):
+            try:
+                new_score = cosine_similarity_mat[row_tb1, row_tb2]
+#                if "Infections and infestations Mild" in rec_table1[row_tb1] and "Infections and infestations" in rec_table2[row_tb2]:
+#                    print("row_tb1: ",rec_table1[row_tb1])
+#                    print("row_tb2: ",rec_table2[row_tb2])
+#                    print(new_score,"\n")
+                
+                #Handling sample size case 
+                if xtype == 'column':
+                    sample_size_got_matched = is_sample_size_match(rec_table1_original[row_tb1], rec_table2_original[row_tb2])
+                    if sample_size_got_matched:
+                        new_score = 1.0
+                        
+#                        #Handling even sample size value match but mild, severe and moderate must be matched in both sides of column as well
+#                        if ("moderate" in str(rec_table1_original[row_tb1]).lower() and "moderate" not in str(rec_table2_original[row_tb2]).lower() ) or ("moderate" in str(rec_table2_original[row_tb2]).lower() and "moderate" not in str(rec_table1_original[row_tb1]).lower() ):
+#                            new_score = 0.5
+#
+#                        if ("mild" in str(rec_table1_original[row_tb1]).lower() and "mild" not in str(rec_table2_original[row_tb2]).lower() ) or ("mild" in str(rec_table2_original[row_tb2]).lower() and "mild" not in str(rec_table1_original[row_tb1]).lower() ):
+#                            new_score = 0.5                            
+#
+#                        if ("severe" in str(rec_table1_original[row_tb1]).lower() and "severe" not in str(rec_table2_original[row_tb2]).lower() ) or ("severe" in str(rec_table2_original[row_tb2]).lower() and "severe" not in str(rec_table1_original[row_tb1]).lower() ):
+#                            new_score = 0.5                        
+                        
+                if new_score <= 0:
+                    new_score  = 0.001
+                if new_score >= score:
+                    record_mapping[row_tb1] = row_tb2
+                    if round(float(new_score),1) == 1.0:
+                        status = "Match"
                     else:
-                        score = float(round(csr.cosine_similarity_tf(clean_table_cell(t1_col_val.lower()), clean_table_cell(t2_col_val.lower())),2))
-                    match_status = getMatchStatus(score)
-                ##If first column, saving the status
-                if t1_col_id == 0:
-                    col_zero_match_status = match_status
-
-                res_it_dict = {'intext_row_id':t1_row_id,'intext_col_id':t1_col_id,'intext_value':t1_col_val,
-                               'posttext_row_id':t2_row_matched,'posttext_col_id':t2_col_matched,'posttext_value':t2_col_val,
-                               'match_score':score, 'match_status' : match_status}
-
-                if extract_thresh_dict:
-                    ## dont check threshold criteria for first column (which has row names)
-                    if t1_col_id == 0 :
-                        if score == 1:
-                            thresh_res = {"status": "Pass","reason": ""}
-                        else:
-                            if match_status == "No Match":
-                                rowFlag = True
-                            thresh_res = {"status": "Find","reason": "value does not match with " + t2_col_val}
-                    ## if cell value doesnt match, no need to check threshold criteria
-                    ## also if row header is not available , then all records in row should be not ch
-                    elif match_status != "Match" or rowFlag :
-                        thresh_res = {"status": "Find","reason": "value does not match with "+ t2_col_val}
+                        status = "No Match"
+                        
+                    if xtype == 'column':
+                        record_mapping_detail[row_tb1] = [str(row_tb1), str(row_tb2), rec_table1_original[row_tb1],rec_table2_original[row_tb2], round(float(new_score),1), status, ""]
                     else:
-                        thresh_res = thresh_check(t1_col_val,extract_thresh_dict)
+                        record_mapping_detail[row_tb1] = [str(row_tb1), str(row_tb2), rec_table1[row_tb1],rec_table2[row_tb2], round(float(new_score),1), status, ""]
+                    score = new_score
+                if score == 1:
+                    continue
+            except:
+                traceback.print_exc()
+                pass
+            
+    for k, v in record_mapping_detail.items():
+        if v[5] == "No Match":
+            v[6] = "value does not match with "+ v[3]    
+        record_mapping_detail_list.append(v)
+            
+    return record_mapping, record_mapping_detail_list
 
-                    res_it_dict['thresh_check'] = thresh_res
-
-                res.append(res_it_dict)
-
-        return res
