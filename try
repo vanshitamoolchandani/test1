@@ -1,50 +1,417 @@
-import re
-from docx import Document
+def SOFThresholdMatch():
+    try:
+        checkName = "SOF Threshold table"
+        errLogsList = []
+        logger.info(checkName + " -  Execution started")
+        data = request.json
+        csr_doc = data['csr_path']
+        source_path = data['sources']
+        start_time = time.time()
+        progress_json_path = data['json_path']
+        time_zone = data["time_zone"]
+    except Exception as e:
+        logger.info(checkName + " -  Error while reading the arguments")
+        logger.info(e)
+        errLogsList.append(fnErrorLog("Paramters","","Unable to read input parameters"))
+        return errJsonMsg("failed",errLogsList)
 
-def count_inclusion_criteria(file_path):
-    """
-    Extracts and counts the number of bullet points under the 'Inclusion Criteria' section
-    in a given Word document. It stores the numbering of the Inclusion Criteria section
-    (e.g., '2.3') and stops when it encounters the next section with the same numbering level.
-    """
-    doc = Document(file_path)
+    logger.info(checkName + "- Reading the documents - process started")
     
-    # Pattern to match the "Inclusion Criteria" heading
-    inclusion_heading_pattern = re.compile(r"^\s*(\d+(\.\d+)*)\s*Inclusion\s+Criteria\s*$", re.IGNORECASE)
+    def removeEmptyRecords(listOfDict):
+        try:
+            if not len(listOfDict) == 0:
+                for tableName,tableValue in listOfDict.items():
+                    tableData = tableValue[1]
+                    for x in tableData:
+                        xValuesList = list(x.values())
+                        if xValuesList.count('') == len(xValuesList):
+                            tableData.remove(x)
+                return listOfDict
+        except:
+            pass
+        return listOfDict
     
-    # Pattern to match bullet points or numbered lists
-    bullet_pattern = re.compile(r"^\s*(\d+(\.\d+)*[.)]?|[-•])\s+")
+    def checkFooterUsingSourceText(tblDf):
+        """
+        This function will check if there is a table footer present in the last row of the table and return Boolean
+        """
+        # tblDf = word_table_to_df(tblElement)
+        tblLastRow = tblDf[-1:].values.flatten().tolist()
+        tblLastRow = [str(x) for x in tblLastRow]
+        if len(tblLastRow) >2:
+            uniqueItemsLastRow = np.unique(tblLastRow[1:]).tolist()
+            if len(uniqueItemsLastRow) <= 1 and ("source:" in tblLastRow[-1].lower() or "source :" in tblLastRow[-1].lower()):
+                footerBool = True
+            else:
+                footerBool = False
+        return footerBool
+    progress_data = {"task":"Reading CSR file","percentage":1,"start_time":start_time,"end_time":time.time(),"time_zone":time_zone}
+    log_progress(progress_json_path,progress_data) 
+    ##  Loading the csr file
+    try:
+        csr = DocQCService(csr_doc)
+    except FileNotFoundError as e:
+        logger.exception(e)
+        errLogsList.append(fnErrorLog("CSR",os.path.basename(csr_doc),"CSR file not present at specified location"))
+        return errJsonMsg("failed",errLogsList)
+    except Exception as e:
+        logger.exception(e)
+        errLogsList.append(fnErrorLog("CSR",os.path.basename(csr_doc),"Unable to read the CSR file properly"))
+        return errJsonMsg("failed",errLogsList)
 
-    found_section = False
-    inclusion_count = 0
-    inclusion_numbering = None  # Stores the numbering of the Inclusion Criteria section (e.g., '2.3')
+#    progress_data = {"task":"Extracting sections from CSR file","percentage":4,"start_time":start_time,"end_time":time.time(),"time_zone":time_zone}
+#    log_progress(progress_json_path,progress_data) 
+    
+    try:
+        csr_sections = csr.getCSRSections(removehead=True,removeNumbers=True,isTable=True,tableHeader = False)
+        if "" not in csr_sections.keys():
+            csr_sections[''] = ""
+    except:
+        errLogsList.append(fnErrorLog("CSR",os.path.basename(csr_doc),"Unable to extract headers from the CSR"))      
+        return errJsonMsg("failed",errLogsList) 
+    
+    ### Section Header - Sub Section Mapping
+    sec_struct = csr.getCSRSectionHeaders_struct_sap()
+    sec_struct = {k: v[1] for k, v in sorted(sec_struct.items(), key=lambda item: item[1]) if v[0]!=0}
+    sec_struct = {k:remove_tlf_headings(v,csr) for k,v in sec_struct.items()}
+    doc_mapping_list = investigational_plan_list
+    _, csr_sections_list_for_doc = sectionHeader_Flatten(sec_struct, doc_mapping_list, csr)
 
-    for para in doc.paragraphs:
-        text = para.text.strip()
+#    progress_data = {"task":"Extracting tables from CSR file","percentage":10,"start_time":start_time,"end_time":time.time(),"time_zone":time_zone}
+#    log_progress(progress_json_path,progress_data) 
+    
+    try:
+#        csr_sections_tables = csr.getCSRSections_tables_check15(removehead=True,removeNewLine = True,tableHeader = False, csr_sections_list_for_doc = csr_sections_list_for_doc)
+        csr_sections_tables = csr.getCSRSections_tables_checkSOFthresholdTable(removehead=True,removeNewLine = True,tableHeader = False, csr_sections_list_for_doc = csr_sections_list_for_doc)
+        if "" not in csr_sections_tables.keys():
+            csr_sections_tables[''] = []
+    except:
+        errLogsList.append(fnErrorLog("CSR",os.path.basename(csr_doc),"Unable to extract table from the csr"))      
+        return errJsonMsg("failed",errLogsList)
 
-        # Check if this line is a valid 'Inclusion Criteria' heading
-        if inclusion_heading_pattern.match(text):
-            # Extract the numbering (e.g., '2.3')
-            inclusion_numbering = inclusion_heading_pattern.match(text).group(1)
-            print(f"Found 'Inclusion Criteria' heading: '{text}' | Numbering: '{inclusion_numbering}'")
-            found_section = True
-            continue  # Skip the heading itself
-        
-        # If we're in the Inclusion Criteria section, check for bullet points
-        if found_section:
-            # Check if this is a new section with the same numbering level
-            if re.match(rf"^\s*{inclusion_numbering}\.\d+\s+", text):
-                print(f"Stopping at new section with same numbering level: '{text}'")
-                break
+    try:
+    
+        ## below function to get tablename and table
+        csr_table_records,csr_table_tfl = mapTableCsrSection1(csr_sections_tables,csr_sections,csr)
+        if len(csr_table_records)>0:
+            csr_sections_tables.update(csr_table_records)
             
-            # Count bullet points under the Inclusion Criteria section
-            if bullet_pattern.match(text):
-                inclusion_count += 1
-                print(f"Found bullet point: '{text}'")
+        ## commented old code and added new function to extract the tfl refs
+        csr_sections_tfl = {}
+        for eachTbl, tblContent in csr_sections_tables.items():
+            if "Table" in eachTbl and len(tblContent) > 0 :
+                source_list = []
+                for table in tblContent:
+                    source_list = csr.getPostTextTFLList(str(table).replace("\\", " "))
+                    source_list += csr.getPostTextTFLList_JNJ(str(table).replace("\\", " "))
+                if eachTbl in csr_table_tfl.keys():
+                    source_list +=  csr_table_tfl[eachTbl]
+                csr_sections_tfl[eachTbl] = source_list
+                
+        ### storing table order
+        #table_order = {tableName : idx for idx, tableName in enumerate(csr_sections_tfl.keys()) }
 
-    return inclusion_count
+        csr_struct = csr.getCSRSectionHeaders_struct()
+        #to add new header of tables
+        csr_struct_subheaders = [ csr_struct[y][1] for y in csr_struct]
+        csr_struct_subheaders = [x for y in csr_struct_subheaders for x in y]
 
-# Example usage
-file_path = "clinical_trial.docx"
-count = count_inclusion_criteria(file_path)
-print(f"Number of Inclusion Criteria points: {count}")
+        for i,x in enumerate(csr_sections_tables.keys()):
+            if x not in csr_struct_subheaders and x not in csr_struct.keys():
+                if i==0:
+                    prev_header = list(csr_sections_tables.keys())[i]
+                else:
+                    prev_header = list(csr_sections_tables.keys())[i-1]
+                try:
+                    idx, parent_header = get_parent_header(prev_header,csr_struct)
+                    csr_struct[parent_header][1].insert(idx+1, x)
+                except:
+                    pass
+                    #errLogsList.append(fnErrorLog("CSR","","Unable to extract csr sections"))
+                    #return errJsonMsg("failed",errLogsList)
+        
+        csr_sections_ext = {}
+        for main_sec in csr_struct.keys():
+            csr_sections_ext[main_sec] = csr_sections[main_sec]
+            for sec in csr_struct[main_sec][1]:
+#                if sec in csr_sections.keys():
+                if not sec.lower().startswith('table'):
+                    try:
+                        csr_sections_ext[main_sec] += "\n"+ csr_sections[sec]
+                    except:
+                        pass
+                        #errLogsList.append(fnErrorLog("CSR","","Unable to extract csr sections"))
+                        #return errJsonMsg("failed",errLogsList)
+
+        logger.info(checkName + "- Reading the documents - process ended")
+
+        ## new code to extract the sources(tfls) only for tables
+        csr_sections_tfl = {}
+        for eachTbl, tblContent in csr_sections_tables.items():
+            if "Table" in eachTbl and len(tblContent) > 0 :
+                source_list = []
+                for table in tblContent:
+                    source_list = csr.getPostTextTFLList(str(table).replace("\\", " "))
+                    source_list += csr.getPostTextTFLList_JNJ(str(table).replace("\\", " "))
+                if eachTbl in csr_table_tfl.keys():
+                    source_list +=  csr_table_tfl[eachTbl]
+                csr_sections_tfl[eachTbl] = list(set([ val.strip(".") for val in source_list]))
+
+        progress_data = {"task":"Reading RTF files","percentage":25,"start_time":start_time,"end_time":time.time(),"time_zone":time_zone}
+        log_progress(progress_json_path,progress_data) 
+        
+        ## getting the tables and section name
+        main_sec_list = list(csr_struct.keys())
+        csr_sections_tables_dict_intext = {}
+        for main_sec in main_sec_list:
+            csr_text = csr_sections_ext[main_sec]
+            for sec_idx, sec in enumerate(csr_struct[main_sec][1]):
+                if not sec.lower().startswith("table"):
+                    continue
+                try:
+                    table_list = csr_sections_tables[sec]
+                except:
+                    table_list = []
+                    pass
+                for table in table_list:
+                    csr_sections_tables_dict_intext[sec] = [csr_text, table, main_sec]
+
+
+    
+#        tablename_sec_dict_intext = {k:"" for k in csr_sections_tables_dict_intext.keys()}
+        csr_sections_tables_dict_posttext = {}
+        csr_sections_tables_rtf = {}
+        source_table_data = {}
+        rtf_html_data = ""
+        # tbl_df_al=[]
+        logger.info(checkName + "- Processing the rft files - process started")
+        tbl_res_dict = {}
+        for rtf_file in glob.glob(source_path+"/*.rtf",recursive=True):
+            try:
+                table_res,bFlag, rtf_file_path, other_data = common_rtf_table_extractor_thres(rtf_file,csr)
+                if "html" in other_data.keys():
+                    rtf_html = getActualHTMLBodyData(other_data["html"])
+                    rtf_html_data += rtf_html
+                    
+#                print("Table res::",table_res)
+                if len(table_res):
+                    for tn, tb_info in table_res.items():
+                        source_table_data[tn] = tb_info
+#                print("bFlag:",bFlag)
+                if bFlag:
+                    tbl_res_dict = {}
+                    for eachTable,values in table_res.items():
+                        cleaned_tbl_header = [
+    {str(key).replace('\\tab', '').strip(): value for key, value in d.items()} for d in values[1]]
+                        
+                        tbl_res_dict[eachTable] = cleaned_tbl_header
+                    csr_sections_tables_rtf.update(tbl_res_dict)
+            except :
+                errLogsList.append(fnErrorLog("RTF", os.path.basename(rtf_file), "Unable to extract rtf table from file"))
+                #return errJsonMsg("failed",errLogsList)
+
+        #Updated common rtf extractor dictionaty with empty array if rtf not uploaded
+        for _key, all_tfls in csr_sections_tfl.items():
+            if len(all_tfls):
+                for _tfl in all_tfls:
+                    if _tfl not in csr_sections_tables_rtf.keys() and not (_tfl.lower().startswith("listing") or _tfl.lower().startswith("figure")):
+                        csr_sections_tables_rtf[_tfl] =  []
+                        
+                    
+            
+        
+        rtf_as_html_data_file_path = extract_rtf_data_as_html(csr_doc, rtf_html_data)
+        
+        tablename_sec_dict_posttext = {}
+        csr_sections_tables_2 = {}
+        for sec in csr_sections_tfl.keys():
+            counter = 1
+            for table in csr_sections_tables_rtf.keys():
+#                if table in csr_sections_tfl[sec] or table.replace("Table","Tables") in csr_sections_tfl[sec]:
+                if chkTblcsrSecTFL(table, csr_sections_tfl[sec]):
+                    if sec in csr_sections_tables_2:
+                        sec_n = sec+"__"+str(counter)
+                        counter += 1
+                        csr_sections_tables_2[sec_n] = csr_sections_tables_rtf[table]
+                        tablename_sec_dict_posttext[sec_n] = table
+                    else:
+                        csr_sections_tables_2[sec] = csr_sections_tables_rtf[table]
+                        tablename_sec_dict_posttext[sec] = table
+                
+                if 'Table' + ' ' + table in csr_sections_tfl[sec]: ##changed here
+                    if sec in csr_sections_tables_2:
+                        sec_n = sec+"__"+str(counter)
+                        counter += 1
+                        csr_sections_tables_2[sec_n] = csr_sections_tables_rtf[table]
+                        tablename_sec_dict_posttext[sec_n] = 'Table' + ' ' + table
+                    else:
+                        csr_sections_tables_2[sec] = csr_sections_tables_rtf[table]
+                        tablename_sec_dict_posttext[sec] = 'Table' + ' ' + table
+                        
+        for main_sec in main_sec_list:
+            csr_text = csr_sections_ext[main_sec]
+            for sec_idx, sec in enumerate(csr_struct[main_sec][1]):
+                if sec in csr_sections_tables_2.keys():
+                    sec_list = [csr_sec for csr_sec in csr_sections_tables_2.keys() if sec == csr_sec[:len(sec)]]
+                    for sec in sec_list:
+                        table_list = [csr_sections_tables_2[sec]]
+                        for table in table_list:
+                            csr_sections_tables_dict_posttext[sec] = [csr_text, table, main_sec]
+                            
+                            
+        ## Adding new keys to intext dict having multiple TFL sources
+        for tableName, values in csr_sections_tables_dict_posttext.items():
+            new_tableName = gettableNameSplit(tableName,"__")
+            if "__" in tableName and new_tableName in csr_sections_tables_dict_intext.keys():
+                csr_sections_tables_dict_intext[tableName] = csr_sections_tables_dict_intext[new_tableName]
+
+        logger.info(checkName + "- comparing and checking table  - process started")
+        
+        ## Saving the result in below variable
+        tsm_res = []
+        
+        progress_data = {"task":"CSR and RTF QC started","percentage":35,"start_time":start_time,"end_time":time.time(),"time_zone":time_zone}
+        log_progress(progress_json_path,progress_data)         
+     
+        csr_sections_tables_dict_intext = removeEmptyRecords(csr_sections_tables_dict_intext)
+        csr_sections_tables_dict_posttext = removeEmptyRecords(csr_sections_tables_dict_posttext)
+        table_counter = 0
+        for it_table, it_content in csr_sections_tables_dict_intext.items():
+            table_counter += 1
+            previous_percent = 35
+            next_percent = math.ceil(previous_percent + (table_counter * 0.25))
+            if next_percent < 95:
+                progress_data = {"task":it_table+" processed","percentage":next_percent,"start_time":start_time,"end_time":time.time(),"time_zone":time_zone}
+                log_progress(progress_json_path,progress_data)             
+#            if not it_table == "Table 38	Unsolicited Adverse Events up to Day 29 With a Frequency ≥1% in at Least One Study Arm by SOC and PT and Maximum Severity (Safety Population)":
+#                continue
+#            it_content = csr_sections_tables_dict_intext[it_table]
+            it_content[1] = cleanTable(it_content[1])
+            it_content[1] = cleanTable_2_threshold(it_content[1])
+            
+            ##get order number for table name
+            #tableOrderNumber = table_order[gettableNameSplit(it_table)]
+
+            ## if extracted table don't have conditional string as greaterh than, less than etc
+            ## inside table name, must not be included in result
+            if len(extract_thresh(it_table)) == 0:
+                continue
+            
+            any_all_tag = ""
+            
+            ## if source table(rtf) is present
+            if it_table in csr_sections_tables_dict_posttext.keys() and len(csr_sections_tables_dict_posttext[it_table][1]):
+                #for pt_table, pt_content in csr_sections_tables_dict_posttext.items():
+                pt_table = it_table
+                pt_content = csr_sections_tables_dict_posttext[pt_table]
+
+                pt_content[1] = cleanTable(pt_content[1])
+                pt_content[1] = cleanTable_2_threshold(pt_content[1])
+                # print(it_content[1])
+                extract_thresh_dict = extract_thresh(it_table)
+                
+                if "in any treatment group" in it_table.lower():
+                    any_all_tag = "any"
+                elif "in all treatment group" in it_table.lower():
+                    any_all_tag = "all"
+                
+                ## check thrreshold value exists in table name or not
+                if len(extract_thresh_dict)>0:
+
+                    table_df_posttext_mat = pd.DataFrame(pt_content[1]) ##.values
+                    table_df_intext_mat = pd.DataFrame(it_content[1])  ## .values
+                    
+                        
+                    ###  Removing Footer from last row of csr table dataframe ###
+                    footerPresent_CSR = checkFooterUsingSourceText(table_df_intext_mat)
+                    if footerPresent_CSR:
+                        table_df_intext_mat = table_df_intext_mat[:-1]
+                    ###
+    
+                    # Check if column names contain '%'
+                    intext_col_has_percent_sign = table_df_intext_mat.columns.str.contains('%').any()
+                    
+                    ### Checking threshold criteria for CSR to SOURCE
+                    row_scores, row_scores_details  = get_mat_scores_new_threshold(csr, table_df_intext_mat, table_df_posttext_mat, xtype='row', is_rtf = False)
+                    col_scores, col_scores_details = get_mat_scores_new_threshold(csr, table_df_intext_mat, table_df_posttext_mat, xtype='column', is_rtf = False)
+                    
+                    res = get_table_source_match_threshold(csr,table_df_posttext_mat.values, table_df_intext_mat.values, row_scores, col_scores, extract_thresh_dict,intext_col_has_percent_sign)
+
+                    ### Checking threshold criteria for SOURCE to CSR
+                    row_scores_pt, row_scores_pt_details = get_mat_scores_new_threshold(csr,table_df_posttext_mat, table_df_intext_mat, xtype='row', is_rtf = True)
+                    col_scores_pt, col_scores_pt_details = get_mat_scores_new_threshold(csr, table_df_posttext_mat, table_df_intext_mat, xtype='column', is_rtf = True)
+                    
+                    res_pt = get_table_source_match_threshold(csr,table_df_intext_mat.values, table_df_posttext_mat.values, row_scores_pt, col_scores_pt, extract_thresh_dict,intext_col_has_percent_sign,True,any_all_tag)
+                    #### Fix if row header is mismatching then all rows cell must be no match  ####
+                    res_pt = set_no_match_row_data_to_no_match(res_pt)
+                    res = set_no_match_row_data_to_no_match(res)
+                    
+                    #### Extract all matched columns
+                    column_match_found = [col_result[5] for col_result in col_scores_details if col_result[5]=="Match"]
+                    
+                    ## Getting final Status of the threshold check based on number of records/cells are  Pass or Find status
+                    final_df = pd.DataFrame(res + res_pt)
+                    final_df[['new_status','Reason']] = final_df.thresh_check.apply(pd.Series)
+                    status_dict = final_df['new_status'].value_counts()
+                    if "No Match" in status_dict.keys():
+                        if status_dict['No Match'] == len(res + res_pt) and len(column_match_found) == 0:
+                            table_match_status,table_match_status_pt = "No Match", "No Match"
+                            total_score, total_score_pt = 0.0 ,0.0
+                        else:
+                            table_match_status,table_match_status_pt = "Partial Match", "Partial Match"
+                            total_score, total_score_pt = 0.75 ,0.75
+                    else:
+                        table_match_status,table_match_status_pt = "Match", "Match"
+                        total_score, total_score_pt = 1.0 ,1.0
+
+                    tsm_res.append(softhresholdJson(it_table,it_content,res,table_match_status,total_score,pt_table,pt_content,tablename_sec_dict_posttext[pt_table],res_pt,table_match_status_pt,total_score_pt,col_scores_details,col_scores_pt_details))
+                else:
+                    tsm_res.append(softhresholdJson(it_table,it_content,[],'No Source Available',0.0,pt_table,pt_content,tablename_sec_dict_posttext[pt_table],[],'No Match',0.0,[],[]))
+            else:
+                if "__" in it_table:
+                   it_table = it_table.split("__")[0] 
+                ## if source available and rtfs are not uploaded
+                if len(csr_sections_tfl[it_table])>0:
+                    tsm_res.append(softhresholdJson(it_table,it_content,[],'No Source Available',0.0,'',[],'',[],'No Match',0.0,[],[]))
+                ## if source not available
+                else:
+                    tsm_res.append(softhresholdJson(it_table,it_content,[],'Manual QC Required',0.0,'',[],'',[],'No Match',0.0,[],[]))
+
+        logger.info(checkName + "- comparing and checking table  - process completed")
+        
+        if len(csr_sections_tables_dict_intext) and len(tsm_res) == 0 :
+            errLogsList.append(fnErrorLog("CSR",os.path.basename(csr_doc),"No threshold tables found in CSR doc"))      
+
+        tsm_res = filter_result_threshold(tsm_res,'inTextTableName','table_match_pc', list(csr_table_tfl.keys()))
+        
+        for adict in tsm_res:
+            if adict['postTextTableTFL'] in source_table_data:
+                try:
+                    adict.update({"footerText":(source_table_data[adict['postTextTableTFL']])[4]})
+                    adict["postTextTableName"] = (source_table_data[adict['postTextTableTFL']])[0]
+                except:
+                    adict.update({"footerText": ""})
+                    
+        progress_data = {"task":"Merging CSR to source and source to CSR results","percentage":98,"start_time":start_time,"end_time":time.time(),"time_zone":time_zone}
+        log_progress(progress_json_path,progress_data) 
+                    
+        #Update JSON to have layout like SOF Reverse Check, update source table name and source table footer
+        tsm_res = reshapeJSONLikeSOFRevese(tsm_res,source_table_data)  
+        
+        data_relayouted = {"data":tsm_res, "rtf_as_html_data_file_path":rtf_as_html_data_file_path}
+        final_result = {"data": data_relayouted,
+            "status": 200,
+            "message" : "success",
+            "error": errLogsList
+                }
+        
+        progress_data = {"task":"Preparing results","percentage":100,"start_time":start_time,"end_time":time.time(),"time_zone":time_zone}
+        log_progress(progress_json_path,progress_data) 
+        
+        logger.info(checkName + "- Execution completed")
+        return jsonify(final_result)
+
+    except Exception as err:
+        logger.exception(err)
+        print(err)
+        return errJsonMsg("failed",errLogsList)
