@@ -400,3 +400,54 @@ def get_mat_scores_new_threshold(csr,table1, table2, xtype='row', is_rtf = False
             
     return record_mapping, record_mapping_detail_list
 
+
+
+def common_rtf_table_extractor_thres(rtf_file,csr):
+    
+    table_info = {}
+    new_rtf_path = ""
+    other_data = {}
+    try:     
+        ## CASE 1: convert rtf file to docx
+        # filename, new_rtf_path = convert_to_docx(rtf_file)
+        # rtf_doc_info = rtf_obj.getRtFDocumentData()
+        # table_info = rtf_obj.getRTFTables(rtf_doc_info)
+        #print("Result of Regular rtf reader:::",table_info)
+        ## Deleting file and folder
+        # if len(table_info) == 0:
+        try:
+            filename, new_rtf_path, other_data  = convert_to_docx_win_new(rtf_file, True)
+        except:       
+            filename, new_rtf_path = convert_to_docx(rtf_file)
+        if filename == "":
+            filename, new_rtf_path = convert_to_docx(rtf_file) 
+            
+        rtf_obj = Document(new_rtf_path)
+#        table_info = findSourceTables(rtf_obj, rtf_file)
+        table_info = findSourceTables_thres(rtf_obj, rtf_file)
+        #print("Result of NIK rtf reader:::",table_info)
+        if len(table_info) > 0:
+            return table_info, True, new_rtf_path, other_data
+
+        if len(table_info) == 0:
+            rtf_obj = DocQCService(new_rtf_path)
+            rtf_doc_info = rtf_obj.getRtFDocumentData()
+            table_info = rtf_obj.getRTFTables(rtf_doc_info)
+            baseFolderPath, FileName  =  os.path.split(new_rtf_path)
+#            os.remove(new_rtf_path)
+#            os.rmdir(baseFolderPath)
+
+        #CASE 2: Used old rtf reader method
+        if not table_info:
+            table_info = getRTFTablesOldMethod(rtf_file, csr)
+            #print("RTF read by old method: ", table_info)
+        return table_info, True, new_rtf_path, other_data
+            
+    except Exception as e:
+        traceback.print_exc()
+        exc_type, exc_value, exc_traceback = sys.exc_info()
+        line_no = exc_traceback.tb_lineno
+        print(f"Exception caught at line {line_no}", "\nReason:", e)  
+        return {},False, new_rtf_path, other_data
+
+
