@@ -451,3 +451,323 @@ def common_rtf_table_extractor_thres(rtf_file,csr):
         return {},False, new_rtf_path, other_data
 
 
+def IndentFeature_CSR_ThresholdCheck(table, indent_type, rtf_Indent = False):
+    clean_table_superscripts_thresholdCheck(table)
+    isIconDoc = False
+    ##### If RTF file if of ICON client #####
+    isIconDoc = True
+    ############
+    first_row_removed = False
+    TableDF = word_table_to_df(table)
+    if rtf_Indent:
+        first_row_list = TableDF.loc[0, :].values.flatten().tolist()
+        for x in first_row_list:
+            if x.lower().startswith('table'):
+                TableDF = TableDF.drop(TableDF.index[0])
+                TableDF = TableDF.reset_index(drop=True)
+                first_row_removed = True
+                break
+    checkIndentList = []
+    fixedHeader = []
+    level_1_dataList = []
+    if indent_type == "inches":
+        indentationIndexes = getIndentValues_ThresholdCheck(table)
+    else:
+        indentationIndexes = getIndentValuesSpaces_ThresholdCheck(table)
+    level_2_text = ""
+    level_1_text = ""
+    for rowId, row in enumerate(table.rows):
+        complete_row = [1 if cell.text.strip() == "" else 0 for cell in row.cells]
+        isRowEmpty = False
+        if sum(complete_row) == len(complete_row):
+            isRowEmpty = True
+        for cell in row.cells:
+            if rowId == 0 and first_row_removed and rtf_Indent:
+#                print(rowId, cell.text.strip())
+                break
+            if not isIconDoc and isRowEmpty:
+                level_2_text = ""
+                level_1_text = ""
+            cell_text = clean_text(str(cell.text.strip()))
+            if indent_type == "inches":
+                # level = indentationIndexes[int(getIndentValue(cell))]
+                try:
+                    level = indentationIndexes[int(getIndentValue_ThresholdCheck(cell))]
+                    
+                    foundLevel = True
+                except Exception as KeyError:
+                    level = 0
+                    foundLevel = False
+            else:
+                foundLevel = True
+                try:
+                    level = indentationIndexes[countSpaces_ThresholdCheck(cell.text)]
+                    if level > 0 and cell.text.strip() == "":
+                        level = 0
+#                    print(level, cell.text)
+                except:
+                    level = 0
+                    foundLevel = True
+                    
+                    
+            ####   Hardcoded for Icon table 14.3.2.3.1  #####       
+            if rtf_Indent and rowId == 1 and not level ==0:
+                level = 0
+                foundLevel = False
+            #############       
+                    
+                    
+            if level == 0:
+                level_1_text = cell_text
+                fixedHeader.append(level_1_text)
+                checkIndentList.append(False)
+                if level_1_text != "":
+                    level_1_dataList.append(level_1_text)
+                if rowId == 0:
+                    row_list = [str(cl.text).strip() for cl in row.cells]
+                    if len(row_list) > 1 and len(set(row_list)) == 1:
+                        level_1_text = ""
+                    if not foundLevel:
+                        level_1_text = ""
+            elif level == 1:
+                level_2_text = cell_text
+                if level_1_text == "":
+                    if len(level_1_dataList)>0:
+                        level_1_text = level_1_dataList[-1]
+                fixedHeader.append(level_1_text + " " + level_2_text)
+                checkIndentList.append(True)
+            elif level == 2:
+                level_3_text = cell_text
+                fixedHeader.append(level_1_text + " " + level_2_text + " " + level_3_text)
+                checkIndentList.append(True)
+            else:
+                outside = cell_text
+                fixedHeader.append(outside)
+                checkIndentList.append(False)
+            break
+    checkIndentList = list(set(checkIndentList))
+    if True in checkIndentList:
+        # TableDF.loc[:,0] = fixedHeader
+        TableDF.loc[:,0] = fixedHeader
+        headerFixed = True
+    else:
+        headerFixed = False
+    if rtf_Indent:   
+        sameStart = TableDF.iloc[0].nunique() == 1
+        if sameStart:
+            TableDF = TableDF[1:]
+        if sameStart:
+            TableDF = TableDF[1:]
+        nrows = TableDF.shape[0]
+        sameEnd = TableDF.iloc[nrows-1].nunique() == 1
+        if sameEnd:
+            TableDF = TableDF[:-1] 
+    TableDF = drop_empty_rows_ThresholdCheck(TableDF)
+    TableDF.index = list(range(TableDF.shape[0]))
+    
+    ####   Fixing table by appending side cell data to row header if below cell is null string  ####
+    try:
+        csrColumnRow1 = TableDF.head(1).values[0].tolist()
+        csrRow1Repeats = get_consecutive_repeats_ThresholdCheck(csrColumnRow1)
+        csrRow1Repeats = [x for x in csrRow1Repeats if x[0] != ""]
+        if len(csrRow1Repeats) >= 1:
+            csrMergedCellHit = True
+        else:
+            csrMergedCellHit = False
+        if not csrMergedCellHit:
+            TableDF, colIncrementStats = fixTable(TableDF)
+        ####
+    except:
+        pass
+    return TableDF
+
+
+def IndentFeature_ThresholdCheck(table, indent_type):
+    clean_table_superscripts_thresholdCheck(table)
+    isIconDoc = False
+    ##### If RTF file if of ICON client #####
+    isIconDoc = True
+    ############
+    TableDF = word_table_to_df(table)
+    checkIndentList = []
+    fixedHeader = []
+    if indent_type == "inches":
+        indentationIndexes = getIndentValues_ThresholdCheck(table)
+    else:
+        indentationIndexes = getIndentValuesSpaces_ThresholdCheck(table)
+    level_2_text = ""
+    level_1_text = ""
+    for rowId, row in enumerate(table.rows):
+        complete_row = [1 if cell.text.strip() == "" else 0 for cell in row.cells]
+        isRowEmpty = False
+        if sum(complete_row) == len(complete_row):
+            isRowEmpty = True
+        for cell in row.cells:
+            if not isIconDoc and isRowEmpty:
+                level_2_text = ""
+                level_1_text = ""
+            cell_text = clean_text(str(cell.text.strip()))
+            if indent_type == "inches":
+                # level = indentationIndexes[int(getIndentValue(cell))]
+                try:
+                    level = indentationIndexes[int(getIndentValue_ThresholdCheck(cell))]
+#                    print(level, cell.text)
+                    foundLevel = True
+                except Exception as KeyError:
+                    level = 0
+                    foundLevel = False
+            else:
+                foundLevel = True
+                try:
+                    level = indentationIndexes[countSpaces_ThresholdCheck(cell.text)]
+                except:
+                    level = 0
+                    foundLevel = True
+            if level == 0:
+                level_1_text = cell_text
+                fixedHeader.append(level_1_text)
+                checkIndentList.append(False)
+                if rowId == 0:
+                    row_list = [str(cl.text).strip() for cl in row.cells]
+                    if len(row_list) > 1 and len(set(row_list)) == 1:
+                        level_1_text = ""
+                    if not foundLevel:
+                        level_1_text = ""
+            elif level == 1:
+                level_2_text = cell_text
+                fixedHeader.append(level_1_text + " " + level_2_text)
+                checkIndentList.append(True)
+            elif level == 2:
+                level_3_text = cell_text
+                fixedHeader.append(level_1_text + " " + level_2_text + " " + level_3_text)
+                checkIndentList.append(True)
+            else:
+                outside = cell_text
+                fixedHeader.append(outside)
+                checkIndentList.append(False)
+            break
+    checkIndentList = list(set(checkIndentList))
+    if True in checkIndentList:
+        # TableDF.loc[:,0] = fixedHeader
+        TableDF.loc[:,0] = fixedHeader
+        headerFixed = True
+    else:
+        headerFixed = False
+        
+    sameStart = TableDF.iloc[0].nunique() == 1
+    if sameStart:
+        TableDF = TableDF[1:]
+    nrows = TableDF.shape[0]
+    sameEnd = TableDF.iloc[nrows-1].nunique() == 1
+    if sameEnd:
+        TableDF = TableDF[:-1]
+    TableDF = drop_empty_rows_ThresholdCheck(TableDF)
+    TableDF.index = list(range(TableDF.shape[0]))
+    return TableDF
+
+
+def getIndentValues_ThresholdCheck(table):
+    indentLevels = []
+    indentLevelDicts = {}
+    continueRow2 = False
+    for rowId, row in enumerate(table.rows):
+        if rowId == 0:
+            row = [removeNonPrintable(cell.text) for cell in row.cells]
+            listRepeats = get_consecutive_repeats_ThresholdCheck(row)
+            if len(listRepeats) > 0:
+                continueRow2 = True
+            continue
+        if continueRow2 and rowId == 1:
+            continue
+        for cell in row.cells:
+            currentIndentation = int(getIndentValue_ThresholdCheck(cell))
+            indentLevels.append(currentIndentation)
+            break
+    for idx, indent in enumerate(set(indentLevels)):
+        indentLevelDicts[indent] = idx
+        # if idx == 3:
+        #     break
+    return indentLevelDicts
+
+
+def getIndentValuesSpaces_ThresholdCheck(table):
+    indentLevels = []
+    indentLevelDicts = {}
+    for rowId, row in enumerate(table.rows):
+        for cell in row.cells:
+            currentIndentation = countSpaces_ThresholdCheck(cell.text)
+            indentLevels.append(currentIndentation)
+            break
+    for idx, indent in enumerate(set(indentLevels)):
+        indentLevelDicts[indent] = idx
+        if idx == 3:
+            break
+    return indentLevelDicts
+
+def getIndentValue_ThresholdCheck(indentedCell):
+    wordSchema = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    indFound = False
+    for para in indentedCell.paragraphs:
+        for child in para._element.getchildren():
+            if isinstance(child, CT_PPr):
+                try:
+                    attribDict = child.ind.attrib
+                    indValue = attribDict[wordSchema + "left"]
+                    indFound = True
+                except Exception as e:
+                    indFound = False
+    if not indFound:
+        indValue = 0
+    return indValue
+
+
+    def getRTFTables(self,doc_list):
+        '''
+        Get the table  
+        '''
+        tableDict ,tableCount = {}, {}
+        tableName, tableTitle = "", ""
+        isTable = False
+        filePath =  self.doc_name
+        tfl_pattern = r'^table\s[A-Z\.]*[0-9][a-z0-9\.\-]+|^[A-Z|_]{1,}[.0-9][.A-Z0-9|_]+'
+        try:
+            for idx, eachRecord in enumerate(doc_list) :
+                if isinstance(eachRecord,str):
+                    if re.match(tfl_pattern,eachRecord,re.I):
+                        
+                        tableName = re.search(tfl_pattern,eachRecord,re.I)[0]
+                        tableTitle = eachRecord.split(tableName)[1].strip(": ")
+                        tableName = tableName.strip(".")
+                        isTable = True
+                    else:
+                        if isTable:
+                            tableTitle += " " + eachRecord
+                        else:
+                            tableName += ""
+                            tableTitle += ""
+                else:
+                    if isTable == False:
+                        for key in eachRecord[0].keys():
+                            if re.match(tfl_pattern,str(key).strip(),re.I):
+                                #tableName = key
+                                tableName = re.search(tfl_pattern,key,re.I)[0]
+                                tableTitle = key.split(tableName)[1].strip(": ")  
+                                tableName = tableName.strip(".")
+                                isTable = True
+                    else:
+                        ##cleaning the tableTitle 
+                        tableTitle = tableTitle.strip(" -")
+                        if tableName in tableDict.keys():
+                            tableCount[tableName] += 1
+                            tableName += "__" + str(tableCount[tableName])
+                            tableDict[tableName] = [tableTitle, eachRecord,filePath]
+                        else:
+                            tableDict[tableName] = [tableTitle, eachRecord,filePath]
+                            tableCount[tableName] = 0
+                        isTable = False
+        except:
+            pass
+                        
+        return tableDict
+
+    
