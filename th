@@ -771,3 +771,26 @@ def getIndentValue_ThresholdCheck(indentedCell):
         return tableDict
 
     
+
+
+ if not is_rtf:  # Forward direction (CSR → RTF)
+            rec_table1 = list(table1.iloc[:,0])  # Full CSR headers
+            rec_table2 = removeContinuedRows(list(table2.iloc[:,0]))  # RTF headers
+            
+            # Keep original versions for display
+            rec_table1_original = list(table1.iloc[:,0])
+            rec_table2_original = list(table2.iloc[:,0])
+        else:  # Reverse direction (RTF → CSR)
+            # For RTF: Use headers as-is
+            rec_table1 = removeContinuedRows(list(table1.iloc[:,0]))
+            
+            # For CSR: Extract only leaf nodes (last part after concatenation)
+            rec_table2 = []
+            for header in list(table2.iloc[:,0]):
+                # Split header and take last part (leaf node)
+                parts = header.split()
+                rec_table2.append(parts[-1] if parts else header)
+            
+            # Keep original versions for display
+            rec_table1_original = list(table1.iloc[:,0])
+            rec_table2_original = list(table2.iloc[:,0])
