@@ -1,0 +1,1948 @@
+def section_similarity_alt_3(csr_sections_list_for_doc, doc_csr_sections_list, csr_sections, doc_csr_sections, csr):
+    print("--------- HP 1")
+    tmp_dict = {csr_sec:[] for csr_sec in csr_sections_list_for_doc}
+    #model_2.max_seq_length = 512
+    #csr_sections_list_for_doc_emb_m2 = model_2.encode([cleanText_mp(replace_brackets_mp(x)) for x in csr_sections_list_for_doc], convert_to_tensor=True,batch_size= 32, show_progress_bar = False)
+    #doc_csr_sections_list_emb_m2 = model_2.encode([cleanText_mp(replace_brackets_mp(x)) for x in doc_csr_sections_list], convert_to_tensor=True,batch_size= 32, show_progress_bar = False)
+    csr_sections_list_for_doc_emb_m2 = encoder_sentence_transformers([cleanText_mp(replace_brackets_mp(x)) for x in csr_sections_list_for_doc])
+    doc_csr_sections_list_emb_m2 = encoder_sentence_transformers([cleanText_mp(replace_brackets_mp(x)) for x in doc_csr_sections_list])
+    print("--------- HP 2")
+
+    csr_sections_list_for_doc_emb = []
+    for idx, x in enumerate(csr_sections_list_for_doc):
+        csr_sections_list_for_doc_emb.append((x, csr_sections_list_for_doc_emb_m2[idx]))
+
+    doc_csr_sections_list_emb = []
+    for idx, x in enumerate(doc_csr_sections_list):
+        doc_csr_sections_list_emb.append((x, doc_csr_sections_list_emb_m2[idx]))
+
+    heading_score_matrix = util.cos_sim(csr_sections_list_for_doc_emb_m2, doc_csr_sections_list_emb_m2)
+    match_data = [([[x[0]]],[[y[0]]], (idx_x, idx_y)) for idx_x, x in enumerate(csr_sections_list_for_doc_emb) for idx_y, y in enumerate(doc_csr_sections_list_emb)]
+    print("--------- HP 3")
+
+    match_tmp = []
+    for x in match_data:
+        sent_x_idx, sent_y_idx = x[2]
+        score = float(heading_score_matrix[sent_x_idx, sent_y_idx])
+        section_mapping_item = getSectionHeader_Similarity_mp(x[0],x[1], score)
+        match_tmp.append(section_mapping_item)
+    mapping_done = []
+    for csr_sec in csr_sections_list_for_doc:
+        if csr_sections[csr_sec] == "":
+            mapping_done.append(csr_sec)
+            for x in match_tmp:
+                if csr_sec == list(x.keys())[0]:
+                    tmp_dict[csr_sec].append([x[csr_sec][0],x[csr_sec][1]])
+        elif len(csr_sections[csr_sec].split()) < 30:
+            mapping_done.append(csr_sec)
+            max_sim = 0
+            max_sim_heading = ""
+            for x in match_tmp:
+                if csr_sec == list(x.keys())[0]:
+                    try:
+                        if any([x[csr_sec][1] == csr_sec + "_" + num for num in "123456789"]) and int(x[csr_sec][0]) == 1:
+                            x[csr_sec][0] = 0.99
+                        if csr_sec.lower() == x[csr_sec][1].lower() and x[csr_sec][1].isupper() and int(x[csr_sec][0]) == 1 and "adverse" in csr_sec.lower():
+                            x[csr_sec][0] = 0.99
+                    except Exception as e:
+                        print("ERROR HERE: ", e)
+                if csr_sec == list(x.keys())[0] and x[csr_sec][0] >= max_sim:
+                    max_sim = x[csr_sec][0]
+                    max_sim_heading = x
+            tmp_dict[csr_sec].append([csr.cosine_similarity(csr_sections[csr_sec],doc_csr_sections[max_sim_heading[csr_sec][1]]),max_sim_heading[csr_sec][1]])
+
+    print("--------- HP 4")
+    start_time = time.time()
+    end_time = time.time() - start_time
+    print("------------------ %s Minutes | IPX 1 ---" % (end_time/60))
+    # csr_sections_unmapped_arrays = model_2.encode([v for k, v in csr_sections.items()])
+    # doc_csr_sections_arrays = model_2.encode([v for k, v in doc_csr_sections.items()])
+    csr_sections_unmapped_arrays = encoder_sentence_transformers([v for k, v in csr_sections.items()])
+    doc_csr_sections_arrays = encoder_sentence_transformers([v for k, v in doc_csr_sections.items()])
+    end_time = time.time() - start_time
+    print("------------------ %s Minutes | IPX 02 ---" % (end_time/60))
+    print("--------- HP 4.25")
+    csr_sections_new = {}
+    for idx, k_v in enumerate(csr_sections.items()):
+        k, v = k_v
+        csr_sections_new[k] = (v, csr_sections_unmapped_arrays[idx])
+
+    doc_csr_sections_new = {}
+    for idx, k_v in enumerate(doc_csr_sections.items()):
+        k, v = k_v
+        doc_csr_sections_new[k] = (v, doc_csr_sections_arrays[idx])
+    print("--------- HP 4.5")
+    csr_and_doc_csr_section_similarities = util.cos_sim(csr_sections_unmapped_arrays, doc_csr_sections_arrays)
+    print("--------- HP 4.75")
+    mapped_similarities = []
+    for idx_csr, k_v_csr in enumerate(csr_sections.items()):
+        if k_v_csr[0] in mapping_done:
+            continue
+        for idx_doc_csr, k_v_doc_csr in enumerate(doc_csr_sections.items()):
+            mapped_similarities.append([k_v_csr[0], k_v_doc_csr[0], csr_and_doc_csr_section_similarities[idx_csr, idx_doc_csr]])
+    print("--------- HP 5")
+
+
+    match_tmp = [x for x in match_tmp if list(x.keys())[0] not in mapping_done ]
+    mapped_similarities_df = pd.DataFrame(mapped_similarities, columns = ["csr_sec_name", "doc_for_csr_sec_name", "score"])
+    
+    match_dict_data = []
+    for x in match_tmp:
+        csr_sec_name = list(x.keys())[0]
+        doc_for_csr_sec_name = x[list(x.keys())[0]][1]
+        score = mapped_similarities_df[(mapped_similarities_df["csr_sec_name"] == csr_sec_name) & (mapped_similarities_df["doc_for_csr_sec_name"] == doc_for_csr_sec_name)].iloc[0]["score"]
+        if len(csr_sec_name) > 30 and (csr_sec_name.strip()[:-5].strip() in doc_for_csr_sec_name or csr_sec_name[8:].strip() in doc_for_csr_sec_name):
+            if score < 0.65:
+                score += 0.2
+            elif score < 0.75:
+                score += 0.125
+        elif len(csr_sec_name) > 40 and csr_sec_name.lower() == doc_for_csr_sec_name.lower() and score < 0.5:
+            score = 0.75
+        if "Adverse Events" in csr_sec_name and "adverse event" == doc_for_csr_sec_name.lower() and score > 0.8:
+            score = 1.0
+        match_dict_data.append((x, csr_sec_name, doc_for_csr_sec_name, score))
+    print("--------- HP 6")
+    
+    match_dict_tmp = []
+    for idx, x in enumerate(match_dict_data):
+        match_dict_tmp.append(getSection_Similarity_mp_2(x[0],x[1],x[2], x[3]))
+    print("--------- HP 7")
+
+    for x in match_dict_tmp:
+        if x:
+            tmp_dict[list(x.keys())[0]].append(list(x.values())[0])
+    
+    print("--------- HP 8")
+    tmp_dict_2 = {}
+    for csr_sec in tmp_dict.keys():
+        list_avg = calculate_list_len(tmp_dict[csr_sec])
+        if list_avg == 2:
+            tmp_dict_2[csr_sec] = sorted(tmp_dict[csr_sec], key=lambda x: x[0])[-1]
+            if len(tmp_dict_2[csr_sec]) == 2:
+                tmp_dict_2[csr_sec].insert(1,tmp_dict_2[csr_sec][0])
+        elif len(tmp_dict[csr_sec])>0:
+            tmp_dict_scores = tmp_dict[csr_sec]
+            # If CSR Section name exactly same as source section name
+            # and first score greater than second, change order
+            tmp_dict_scores = [[x[1], x[0], x[2], x[3]] if x[2].lower() == csr_sec.lower() and x[0] > x[1] else x for x in tmp_dict_scores]
+            tmp_dict_2[csr_sec] = sorted(tmp_dict_scores, key=lambda x: x[1])[-1]
+            if len(tmp_dict_2[csr_sec]) == 2:
+                tmp_dict_2[csr_sec].insert(1,tmp_dict_2[csr_sec][0])
+        else:
+            tmp_dict_2[csr_sec] = [0.0,0.0, ""]
+    
+    return tmp_dict_2
+
+
+def getSectionMatchPositions(self, csr_doc_section_match_dict, csr_sections, doc_csr_sections, mapping_type,abbr_intext, doc_mapping=None, doc_text_listing=None,doc_abbr_intext={}):
+        try:
+            def getdocname(doc_str, doc_mapping):
+                doc_list = []
+                for doc in doc_mapping.keys():
+                    if doc_str[:-2] in doc_mapping[doc]:
+                        doc_list.append(doc)
+                if len(doc_list)>0:
+                    return doc_list[0]
+                else:
+                    return ""
+
+            def cleandoctext(doc_str):
+                if doc_str[-2:] == "..":
+                    return doc_str[:-2]+"."
+                else:
+                    return doc_str
+
+            def add_delim(doc_str):
+                if ".." in doc_str:
+                    return doc_str.replace("..", "~")
+                else:
+                    return doc_str
+
+            def check_single_word(csr_str):
+                if csr_str == "":
+                    return False
+                csr_str = csr_str.strip()
+                csr_list = csr_str.split(" ")
+                if len(csr_list)>1:
+                    return False
+                else:
+                    return True
+
+            def jaccard_similarity(text1, text2):
+                list1 = list(self.cleanText(text1).split())
+                list2 = list(self.cleanText(text2).split())
+                set1 = set(list1)
+                set1n = len(set1)
+                set2 = set(list2)
+                intersection = len(set1.intersection(set2))
+                if set1n == 0:
+                    return 0
+                else:
+                    if len(set2) == 1 and intersection == 1:
+                        return (0.8 * len(set1)) / len(set1)
+                    return intersection / len(set1)
+
+            def sent_tokenizer(paragraph_str, mode):
+                # Splitting the sentences
+                real_sentences = nltk.sent_tokenize(paragraph_str)
+                
+                # Removing occurance of 2 or more spaces
+                real_sentences = [re.sub(r' {2,}', ' ', string).strip() for string in real_sentences]
+
+                try:
+                    new_real_sentences = []
+                    for item in real_sentences:
+                        new_real_sentences.extend(item.split("\n"))
+                    real_sentences = new_real_sentences
+                except:
+                    pass
+                real_sentences = [j.strip() for j in real_sentences]
+                return real_sentences
+            start_time = time.time()
+            end_time = time.time() - start_time
+
+            ###########################################################################################
+            ###########################################################################################
+            ################# PARALLEL RUN TO GET SEC POS LISTS
+            def is_json_serializable(data):
+                try:
+                    json.dumps(data)
+                    return True
+                except:
+                    print("Json dictionary not serializable!")
+                    return False
+
+            # Building payloads
+            all_payloads = []
+            for sec_idx, sec in enumerate(csr_doc_section_match_dict.keys()):
+                doc_sec = csr_doc_section_match_dict[sec][2]
+                dict_to_append = {"section":str(sec), "arg1":csr_sections[sec], "arg2": doc_csr_sections[doc_sec], "arg3":abbr_intext, "arg4": doc_text_listing, "arg5":doc_abbr_intext, "arg6":"SAP"}
+                if is_json_serializable(dict_to_append):
+                    all_payloads.append(dict_to_append)
+                else:
+                    print(f"Dictionary for section {sec} can't be serialized!")
+
+            # Get sec_pos_lists parallely
+            async def getMatchPositions_RUN(payloads):
+                async with httpx.AsyncClient(timeout = None) as client:
+                    tasks = [getMatchPositions_Call(client, payload, np_machine_port) if payload_idx % 4 == 0 else getMatchPositions_Call(client, payload, machine_port) for payload_idx, payload in enumerate(payloads)]
+                    #tasks = [getMatchPositions_Call(client, payload, machine_port) for payload in payloads]
+                    results = await asyncio.gather(*tasks)
+                return results
+            print("-- Started getMatchPositions ASYNCIO Process")
+            start_time_match = time.time()
+            sec_pos_results = asyncio.run(getMatchPositions_RUN(all_payloads))
+
+            print("------------------ %s Minutes | IP 0 ---" % (end_time/60))
+            csr_doc_section_match_pos = []
+            for sec_idx, sec in enumerate(csr_doc_section_match_dict.keys()):
+                match_score = csr_doc_section_match_dict[sec][1]
+                if len (csr_doc_section_match_dict[sec])==3:
+                    cosine_score= 0.0 #assigning cosine of 0 to non matched sections in final dict
+                else:
+                    cosine_score=csr_doc_section_match_dict[sec][-1]
+                doc_sec = csr_doc_section_match_dict[sec][2]
+                #Reverse QC to highlight in protocol doc
+                reverse_qc = []
+                    
+                if match_score >= 0.3:
+                    checkOneWord = False
+                    if check_single_word(csr_sections[sec]) or check_single_word(doc_csr_sections[doc_sec]):
+                        checkOneWord = True
+
+                    sec_pos_list = []
+                    #print(f"------------------ %s Minutes | IP 0, {sec_idx}, 1 ---" % (end_time/60))
+                    #sec_pos_list = self.getMatchPositions(csr_sections[sec], doc_csr_sections[doc_sec],abbr_intext, doc_text_listing,doc_abbr_intext)
+                    sec_pos_list = [sec_res['result'] for sec_res in sec_pos_results if sec_res["section"] == sec][0]
+                    #Reverse QC to highlight in protocol doc
+                    reverse_qc = []
+                    try:
+                        if mapping_type == "Protocol":
+                            reverse_qc = []
+                            
+                            #reverse_qc = self.getSectionMatchPositionsReverseQC(sec, doc_sec, csr_doc_section_match_dict, csr_sections, doc_csr_sections, mapping_type,abbr_intext, doc_mapping=None, doc_text_listing=None,doc_abbr_intext={})    
+                    except Exception as e:
+                        print("There is error while processing reverse QC: ", str(e))
+                        pass
+                    #print(f"------------------ %s Minutes | IP 0, {sec_idx}, 2 ---" % (end_time/60))
+                    ###################################################################################################
+                    # FIX ONE CSR SENTENCE TO MULTIPLE DOC SENTENCES ISSUE
+                    # try:
+                    #     doc_sect_sent_list = sent_tokenizer(doc_csr_sections[doc_sec], "")
+                    #     for idx, item in enumerate(sec_pos_list):
+                    #         if item[-1] != "":
+                    #             sent_sim_dict = [[doc_sent,(self.cosine_similarity(item[-2], doc_sent) + jaccard_similarity(item[-2], doc_sent)) / 2] for doc_sent in doc_sect_sent_list if doc_sent[:-1] not in [j[3] for j in sec_pos_list]]
+                    #             sent_sim_dict = [j for j in sent_sim_dict if j[1] > 0.55]
+                    #             sent_sim_dict = sorted(sent_sim_dict, key = lambda x: int(doc_csr_sections[doc_sec].find(x[0])), reverse = False)
+                    #             sent_sim_dict = [j[0] for j in sent_sim_dict]
+                    #             extended_sent = " |||| ".join(sent_sim_dict)
+                    #             if item[3] not in extended_sent and extended_sent != "":
+                    #                 extended_sent = item[3] + " |||| " + extended_sent
+                    #             if " |||| " in extended_sent:
+                    #                 sec_pos_list_add = self.getMatchPositions(item[-2], extended_sent, abbr_intext, doc_text_listing,doc_abbr_intext)[0]
+                    #                 sec_pos_list_add[3] = sec_pos_list_add[3].split(" |||| ")[0].replace("|||| ","")
+                    #                 sec_pos_list = [j if j[2] != sec_pos_list_add[2] else sec_pos_list_add for j in sec_pos_list]
+                    #                 try:
+                    #                     for idx, sec_item in enumerate(sec_pos_list):
+                    #                         catch_fails = []
+                    #                         for _word_ in sec_item[1]:
+                    #                             if len(_word_["word"]) > 10 and _word_['word'].lower() in [j[:-1] if j[-1:] == "." or j[-1] == "," else j for j in doc_csr_sections[doc_sec].lower().split()]:
+                    #                                 catch_fails.append(_word_)
+                    #                         sec_pos_list[idx][1] = [j for j in sec_pos_list[idx][1] if j not in catch_fails]
+                    #                 except Exception as e:
+                    #                     print(e, "\n\n")
+                    #         if item[-1] == "":
+                    #             sent_sim_dict = [[doc_sent,(self.cosine_similarity(item[-2], doc_sent) + jaccard_similarity(item[-2], doc_sent)) / 2] for doc_sent in doc_sect_sent_list]
+                    #             sent_sim_dict = [j for j in sent_sim_dict if (j[1] > 0.5 and len(self.cleanText(j[0]).split()) > 2) or (j[1] >= 0.4 and len(self.cleanText(j[0]).split()) <= 2)]
+                    #             sent_sim_dict = sorted(sent_sim_dict, key = lambda x: int(doc_csr_sections[doc_sec].find(x[0])), reverse = False)
+                    #             sent_sim_dict = [j[0] for j in sent_sim_dict]
+                    #             extended_sent = " |||| ".join(sent_sim_dict)
+                    #             if " |||| " in extended_sent:
+                    #                 sec_pos_list_add = self.getMatchPositions(item[-2], extended_sent, abbr_intext, doc_text_listing,doc_abbr_intext)[0]
+                    #                 sec_pos_list_add[3] = sec_pos_list_add[3].split(" |||| ")[0].replace("|||| ","")
+                    #                 sec_pos_list = [j if j[2] != sec_pos_list_add[2] else sec_pos_list_add for j in sec_pos_list]
+                    # except:
+                    #     pass
+                    # #print(f"------------------ %s Minutes | IP 0, {sec_idx}, 3 ---" % (end_time/60))
+                    # #######################################################################################################
+                    # #######################################################################################################
+                    # # FIX Multiple CSR sentence to one doc sentence issue
+                    # try:
+                    #     doc_sent_matched = list(set([j[3] for j in sec_pos_list if j[3] != ""]))
+                    #     for idx, item in enumerate(sec_pos_list):
+                    #         if item[-1] == "" and item[2] != "":
+                    #             doc_sent_scores_ = [float(jaccard_similarity(item[-2], sent)) for sent in doc_sent_matched]
+                    #             if len(doc_sent_scores_) > 0:
+                    #                 highest_match = np.argmax(doc_sent_scores_)
+                    #                 highest_score = np.max(doc_sent_scores_)
+                    #                 if float(highest_score) > 0.65:
+                    #                     sec_pos_list_add = self.getMatchPositions(item[-2], doc_sent_matched[highest_match], abbr_intext, doc_text_listing,doc_abbr_intext)[0]
+                    #                     sec_pos_list = [j if j[2] != sec_pos_list_add[2] else sec_pos_list_add for j in sec_pos_list]
+                    # except:
+                    #     pass
+                    # #######################################################################################################
+                    # #print(f"------------------ %s Minutes | IP 0, {sec_idx}, 4 ---" % (end_time/60))
+                    sec_pos_dict = []
+                    sec_pos_items_list = []
+
+                    def replace_required_symbols(_str_):
+                        dict_rep = {"": "≥"}
+                        for symb, rep_symb in dict_rep.items():
+                            _str_ = _str_.replace(symb, rep_symb)
+                        return _str_
+
+                    for idx_sec_pos, sec_pos in enumerate(sec_pos_list):
+                        if len(sec_pos[1])>0:
+    #                        sec_pos_items = [{'word':str(sec_pos[2])[v[0]:v[1]], 'position':v} for k,v in sec_pos[1].items()]
+    #                        sec_pos_items = [{'word':k, 'position':v} for k,v in sec_pos[1].items()]
+                            sec_pos_items = sec_pos[1]
+                            if doc_mapping is not None: #                       "csr_sentence": add_delim(sec_pos[2]), "doc_sentence": add_delim(sec_pos[3])
+                                sec_pos_dict.append(word_csr_num_protocol_fix({"positions":sec_pos_items, "csr_sentence": replace_required_symbols(sec_pos[2]), "doc_sentence": sec_pos[3], "doc_section":getdocname(sec_pos[3], doc_mapping)}, abbr_intext)) #, "doc_sentence": sec_pos[3]
+                            else:
+                                sec_pos_dict.append(word_csr_num_protocol_fix({"positions":sec_pos_items, "csr_sentence": replace_required_symbols(sec_pos[2]), "doc_sentence": sec_pos[3], "doc_section":""}, abbr_intext))
+                            sec_pos_items_list.extend(sec_pos_items)
+                        else:
+                            sec_pos_items = []
+                            if doc_mapping is not None:
+                                sec_pos_dict.append(word_csr_num_protocol_fix({"positions":sec_pos_items, "csr_sentence": replace_required_symbols(sec_pos[2]), "doc_sentence": sec_pos[3], "doc_section":getdocname(sec_pos[3], doc_mapping)}, abbr_intext)) #, "doc_sentence": sec_pos[3]
+                            else:
+                                sec_pos_dict.append(word_csr_num_protocol_fix({"positions":sec_pos_items, "csr_sentence": replace_required_symbols(sec_pos[2]), "doc_sentence": sec_pos[3], "doc_section":""}, abbr_intext))
+                            sec_pos_items_list.extend(sec_pos_items)
+
+                    #print(f"------------------ %s Minutes | IP 0, {sec_idx}, 5 ---" % (end_time/60))
+
+                    if checkOneWord is False:
+                        if match_score > 0.5  and cosine_score>= 0.15 and len(csr_sections[sec].strip()) == 0:
+                            status = "Match"
+                        elif match_score > 0.997 and len(sec_pos_items_list)==0: # 0.8
+                            status = "Match"
+                        elif match_score >= 0.5 and len(sec_pos_items_list)>0:
+                            if match_score < 0.7:
+                                if self.cosine_similarity(sec, csr_doc_section_match_dict[sec][2].split("+$$+")[-1]) < 0.5 and not any([j.lower() in [k.lower() for k in csr_doc_section_match_dict[sec][2].split()] for j in sec.split()]):
+                                    status = "MisMatch"
+                                else:
+                                    status = "Partial Match"
+                            else:
+                                status = "Partial Match"
+                        elif match_score > 0.93 and match_score < 0.997 and cosine_score>= 0.15 and len(sec_pos_items_list)==0:
+                            status = "Match"
+                        elif match_score > 0.8 and len(sec_pos_items_list)==0  and cosine_score>= 0.15 and len(sec_pos_list) == 1:
+                            status = "Match"
+    #                    elif match_score >= 0.95 and len(sec_pos_items_list)==0:
+    #                        status = "Partial Match"
+                        elif match_score >= 0.5 and len(sec_pos_items_list)==0:
+                            if sec.lower().strip() == csr_doc_section_match_dict[sec][2].split(" +$$+ ")[0].lower().strip() and match_score > 0.6:
+                                status = "Match"
+                            else:
+                                status = "Partial Match"
+                        else :
+                            status = "MisMatch"
+                    else:
+                        if match_score >= 0.99 :
+                            status = 'Match'
+                        elif match_score >= 0.5 and match_score < 0.99:
+                            status = 'Partial Match'
+                        else:
+                            status = 'MisMatch'
+                    if checkOneWord and status != 'MisMatch':
+                        positions_oneword = {
+                            "positions":[],
+                            "csr_sentence":self.cleanText_Content(csr_sections[sec]),
+                            "doc_sentence" : self.cleanText_Content(doc_csr_sections[doc_sec]),
+                            "doc_section" : ""
+                        }
+                        #csr_doc_section_match_pos.append({'mapping_type':mapping_type,'csr_heading': self.cleanText_Content1(sec), 'mapped_heading': self.cleanText_Content1(doc_sec), "match_score":match_score, "status":status, "match_positions":positions_oneword,"csrHeadingOccurence":1,"mappedHeadingOccurence" : 1 })
+                        csr_doc_section_match_pos.append(sap_json_structure(0,mapping_type,self.cleanText_Content1(sec), self.cleanText_Content1(doc_sec), match_score,status,positions_oneword,1, 1, "", None, reverse_qc))
+                    elif len(sec_pos_dict)>0:
+                        #csr_doc_section_match_pos.append({'mapping_type':mapping_type,'csr_heading': self.cleanText_Content1(sec), 'mapped_heading': self.cleanText_Content1(doc_sec), "match_score":match_score, "status":status, "match_positions":sec_pos_dict,"csrHeadingOccurence":1,"mappedHeadingOccurence" : 1 })
+                        csr_doc_section_match_pos.append(sap_json_structure(0,mapping_type,self.cleanText_Content1(sec), self.cleanText_Content1(doc_sec), match_score,status,sec_pos_dict,1, 1, "", None, reverse_qc))
+                    elif len(sec_pos_dict)==0 and status=='Match':
+                        #csr_doc_section_match_pos.append({'mapping_type':mapping_type,'csr_heading': self.cleanText_Content1(sec), 'mapped_heading': self.cleanText_Content1(doc_sec), "match_score":match_score, "status":status, "match_positions":[],"csrHeadingOccurence":1,"mappedHeadingOccurence" : 1 })
+                        csr_doc_section_match_pos.append(sap_json_structure(0,mapping_type,self.cleanText_Content1(sec), self.cleanText_Content1(doc_sec), match_score,status,[],1, 1, "", None, reverse_qc))
+                    else:
+                        #csr_doc_section_match_pos.append({'mapping_type':mapping_type,'csr_heading': self.cleanText_Content1(sec), 'mapped_heading': self.cleanText_Content1(doc_sec), "match_score":match_score, "status":status, "match_positions":[],"csrHeadingOccurence":1,"mappedHeadingOccurence" : 1 })
+                        csr_doc_section_match_pos.append(sap_json_structure(0,mapping_type,self.cleanText_Content1(sec), self.cleanText_Content1(doc_sec), match_score,status,[],1, 1, "", None, reverse_qc))
+                        
+                elif match_score == 0.0: #mis match when target is empty
+                    position_data = []
+                    try:
+                        position_data = [{"positions":[], "csr_sentence": csr_sections[sec].strip(), "doc_sentence": "", "doc_section":""}]
+                    except:
+                        pass
+                    #csr_doc_section_match_pos.append({'mapping_type':mapping_type,'csr_heading': self.cleanText_Content1(sec), 'mapped_heading': self.cleanText_Content1(doc_sec), "match_score":match_score, "status":'MisMatch', "match_positions":[],"csrHeadingOccurence":1,"mappedHeadingOccurence" : 1 })
+                    csr_doc_section_match_pos.append(sap_json_structure(0,mapping_type,self.cleanText_Content1(sec), self.cleanText_Content1(doc_sec), match_score,'MisMatch',position_data,1, 1, "", None, reverse_qc))
+                else:
+                    #csr_doc_section_match_pos.append({'mapping_type':mapping_type,'csr_heading': self.cleanText_Content1(sec), 'mapped_heading': self.cleanText_Content1(doc_sec), "match_score":match_score, "status":'No Match', "match_positions":[],"csrHeadingOccurence":1,"mappedHeadingOccurence" : 1 })
+                    try:
+                        position_data = [{"positions":[], "csr_sentence": csr_sections[sec].strip(), "doc_sentence": "", "doc_section":""}]
+                    except:
+                        pass
+                    csr_doc_section_match_pos.append(sap_json_structure(0,mapping_type,self.cleanText_Content1(sec), self.cleanText_Content1(doc_sec), match_score,'No Match',position_data,1, 1, "", None, reverse_qc))
+            
+            print("-- Finished getMatchPositions ASYNCIO Process")
+            end_time_match = time.time()
+            print(f"Execution time: {end_time_match - start_time_match:.4f} seconds\n")
+
+            end_time = time.time() - start_time
+            print("------------------ %s Minutes | IP 1 ---" % (end_time/60))
+
+
+            ## Checking any section with status "Partial Match" and all CSR content is matched with corresponding section
+            for idx, eachRec in enumerate(csr_doc_section_match_pos):
+                try:
+                    csr_sec = eachRec['csr_heading']
+                    doc_sec = eachRec['mapped_heading']
+                    if len(csr_sections[csr_sec]) > 0 and len(doc_csr_sections[doc_sec])>0 and eachRec['status'] == 'Partial Match' and eachRec['match_score'] >= 0.85:
+                        csr_para = csr_sections[csr_sec]
+                        for subResult in eachRec['match_positions']:
+                            ## if any diff or words is present, then break
+                            if subResult['positions'] == []:
+                                csr_para = csr_para.replace(subResult['csr_sentence'],"")
+                            else:
+                                break
+                        csr_para = re.sub('\.|:|\s{1,}','',csr_para)
+
+                        ## if length of csr paragraph is empty, then change status to "Match"
+                        if len(csr_para.strip()) == 0:
+                            csr_doc_section_match_pos[idx]['status'] = "Match"
+                except:
+                    pass
+            end_time = time.time() - start_time
+            #print("------------------ %s Minutes | IP 2 ---" % (end_time/60))
+            ## Checking any section with status "Partial Match" but all doc_sent is empty, the convert to "no match"
+            for idx, eachRec in enumerate(csr_doc_section_match_pos):
+                try:
+                    csr_sec = eachRec['csr_heading']
+                    doc_sec = eachRec['mapped_heading']
+                    if len(eachRec['match_positions']) > 0 and eachRec['status'] == 'Partial Match':
+                        bFlag = True
+                        for subResult in eachRec['match_positions']:
+                            if len(subResult['csr_sentence']) > 0 and len(subResult['doc_sentence'].strip()) > 0 :
+                                bFlag = False
+                                break
+
+                        ## if all doc_sentences are empty, then  change status to "No Match"
+                        if bFlag :
+                            csr_doc_section_match_pos[idx]['status'] = "No Match"
+                except:
+                    pass
+            end_time = time.time() - start_time
+            #print("------------------ %s Minutes | IP 3 ---" % (end_time/60))
+            return csr_doc_section_match_pos
+        except Exception as e:
+            exc_type, exc_value, exc_traceback = sys.exc_info()
+            line_no = exc_traceback.tb_lineno
+            print(f"Exception caught at line {line_no}")
+            print("Error occurred in getSectionMatchPositions Function: ", str(e))
+            return []
+
+
+
+import logging
+logging.basicConfig(filename='ContentMatchingServiceLog.log', level=logging.DEBUG,
+                    format='%(asctime)s %(levelname)s %(name)s %(message)s')
+logging.getLogger('pdfminer').setLevel(logging.WARNING)
+logger = logging.getLogger(__name__)
+from flask import request , jsonify
+from DocQCAPI import DocQCService
+from DocQCAPI import get_abbr
+import re, os
+import json
+from pathlib import Path
+from datetime import datetime
+import json
+import pandas as pd
+from DocQCAPI import record_mapping_bert, sap_json_structure
+from HelperFunctions import transform_index_pm, getMatchStatus, cleanTable ,cleanTable_2
+from HelperFunctions import remove_tlf_headings, section_similarity_alt_3, errJsonMsg
+from HelperFunctions import sectionHeader_Flatten,getSectionHeaders,mapTableCsrSection1
+from HelperFunctions_SAP import ethics_list, investigators_list, introduction_list, study_objectives_list, investigational_plan_list
+from HelperFunctions import handle_subsections, remove_blankdocsen, handle_multi_map, getTextOccurence, section_similarity_config_new
+from HelperFunctions import addHeaderAsFirstRow
+import spacy
+nlp_model = spacy.load("en_core_web_lg")
+import string
+import time
+import sys
+from sentence_transformers import SentenceTransformer, util
+model_2 = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
+import math
+from progress_bar import log_progress
+
+from Model_API_Caller import *
+
+def comparision():
+    start_time = time.time()
+    checkName = "Doc Comparision"
+    data = request.json
+    csr_path = data['csr_path']
+    doc_path = data['doc_path']
+    doc_type = data['doc_type']
+    doc_mapping = data['doc_mapping']
+    
+    progress_json_path = data['json_path']
+    time_zone = data["time_zone"] 
+    doc_count = int(data["doc_count"])
+    
+    prev_doc_exe_percent = 0
+    final_result = {}
+    start_time = time.time()
+    previous_res_data = []
+    previous_res_doc_type = ""
+    basePath = os.path.dirname(csr_path)
+    outputFolderPath = os.path.join(basePath,"python_outputs")    
+    fileName = Path(doc_path).stem
+    full_doc_path = outputFolderPath + "/" + doc_type + "_" + fileName +".json"
+    if os.path.exists(full_doc_path) and (doc_mapping is not None) :
+        if len(doc_mapping) > 0:
+            previous_res = readJson(full_doc_path)
+            previous_res_data = previous_res['doc_res']
+            previous_res_doc_type = doc_type
+
+    try:
+        if os.path.exists(progress_json_path):
+            _json_data = readJson(progress_json_path)    
+            if len(_json_data) > 0:
+                start_time = _json_data[0]["start_time"]
+                prev_doc_exe_percent = _json_data[-1]["percentage"]
+                
+            #Handle paralle API execution issue to control the percentage value
+            if  prev_doc_exe_percent >= 60:
+                prev_doc_exe_percent = 54                
+    except:
+        pass
+        
+#    if "previous_res" in data.keys() and  len(data['previous_res']):
+#
+#        previous_res_path = data['previous_res']
+#        previous_res = readJson(previous_res_path)
+#        previous_res_data = previous_res['doc_res']
+#        previous_res_doc_type = data['previous_res_doc_type']
+        
+    
+    
+    try:
+        doc_mapping = data['doc_mapping']
+        ## if doc mapping is none, will create the mappings in code
+        if doc_mapping is None:
+             doc_mapping = []
+    except:
+        import traceback
+        traceback.print_exc()
+        doc_mapping = []
+
+    sep_key = " +$$+ "
+
+    logger.info(checkName + " " + doc_type + "*** input data ***" + str(data))
+    if doc_mapping:
+        if isinstance(doc_mapping,str):
+            doc_mapping = json.loads(doc_mapping)
+    else:
+        doc_mapping = []
+
+    logger.info(checkName + " " + doc_type + " " + "Process started")
+    end_time = time.time() - start_time
+    print("--------- %s Minutes | HP 1 ---" % (end_time/60))
+    ### SAP & Template file is optional, if file is empty and type is SAP return
+    if len(doc_path) == 0 and (doc_type == "SAP" or doc_type == "Template"): 
+        final_res = {"doc_res":[],"csr_sections_list":[],"sec_struct_list":[]}
+        logger.info(checkName + " " + doc_type + " " + str(final_res))
+        logger.info(checkName + " " + doc_type + " " + "Process completed")
+        return final_res
+
+    #filter doc mapping
+    doc_file_name = Path(doc_path).stem + Path(doc_path).suffix
+    
+    
+    if len(doc_mapping):
+        for _each_mapping in doc_mapping:
+            _each_mapping["sourceKey"] = _each_mapping["changedKey"]
+
+    for x in doc_mapping:
+        if doc_type.upper() in x["mappingType"]:# and x["docFileName"] == "":
+            x["docFileName"] = doc_file_name
+    logger.info(checkName + " " + doc_type + " " + "doc mapping " + str(doc_mapping))
+    doc_mapping = [x for x in doc_mapping if x["docFileName"]==doc_file_name]
+    mapped_multi = []
+    doc_mapping_kv = {}
+    for x in doc_mapping:
+        if not x["select"]:
+            continue
+        if x["csrKey"] == "" or x["sourceKey"] == "":
+            continue
+        if x["csrKey"] not in mapped_multi:
+            doc_mapping_kv[x["csrKey"]] = x["sourceKey"]
+            mapped_multi.append(x["csrKey"])
+        else:
+            doc_mapping_kv[x["csrKey"]] = doc_mapping_kv[x["csrKey"]] + sep_key + x["sourceKey"]
+    
+    _percent = math.ceil(1 / doc_count) + prev_doc_exe_percent
+    progress_data = {"task":"Reading CSR file to QC "+ doc_type,"percentage":_percent,"start_time":start_time,"end_time":time.time(),"time_zone":time_zone}
+    log_progress(progress_json_path,progress_data)     
+    
+    #extract and process CSR
+    csr = DocQCService(csr_path)
+    
+    _percent = math.ceil(4 / doc_count) + prev_doc_exe_percent
+    progress_data = {"task":"Reading "+doc_type+" file","percentage":_percent,"start_time":start_time,"end_time":time.time(),"time_zone":time_zone}
+    log_progress(progress_json_path,progress_data)      
+    
+    try:
+        doc_csr = DocQCService(doc_path)
+    except KeyError as e:
+        import traceback
+        traceback.print_exc()
+        result = {"doc_res":[],"csr_sections_list":[],"sec_struct_list":[],"doc_type": doc_type}
+        outputFilePath = createSAPOutputfile(csr_path,result,doc_type,doc_path)
+        if "no relationship of type" in str(e).lower():
+            
+            final_result = {"data" : outputFilePath,
+                            "status": 400,
+                            "message" : "failed",
+                            "message_description" : "Unable to read old format word doc"
+                            } 
+        else:
+            final_result = {"data" : outputFilePath,
+                            "status": 400,
+                            "message" : "failed",
+                            "message_description" : "Unable to read word doc"
+                            }
+        return final_result             
+            
+    except:
+        import traceback
+        traceback.print_exc()
+        result = {"doc_res":[],"csr_sections_list":[],"sec_struct_list":[],"doc_type": doc_type}
+        outputFilePath = createSAPOutputfile(csr_path,result,doc_type,doc_path)
+        final_result = {"data" : outputFilePath,
+                        "status": 400,
+                        "message" : "failed",
+                        "message_description" : "Unable to read  word doc"
+                        }
+        return final_result                    
+            
+#    csr_sections = csr.getCSRSections(removehead=True,removeNumbers=True,isTable=True,tableHeader = False)
+    
+#    csr_sections = csr.getCSRSections_alt()
+#    if len(csr_sections)>0:
+#        sanity_check_perc = sum([val=="" for val in csr_sections.values()])/len(csr_sections)
+#        if sanity_check_perc > 0.5:
+#            csr_sections = csr.getCSRSections()
+#    else:
+#        csr_sections = csr.getCSRSections()
+
+    _percent = math.ceil(7 / doc_count) + prev_doc_exe_percent
+    progress_data = {"task":"Extracting sections from CSR file to QC " + doc_type,"percentage":_percent,"start_time":start_time,"end_time":time.time(),"time_zone":time_zone}
+    log_progress(progress_json_path,progress_data)         
+    
+    end_time = time.time() - start_time
+    print("--------- %s Minutes | HP 2 ---" % (end_time/60))
+    csr_sections = csr.getCSRSections_SAP()
+
+    csr_sections_clean_list = remove_tlf_headings(list(csr_sections.keys()),csr)
+    csr_sections = {k:csr_sections[k] for k in csr_sections_clean_list}
+    csr_sections_list = getSectionHeaders(csr_sections)
+
+    ### Section Header - Sub Section Mapping
+    sec_struct = csr.getCSRSectionHeaders_struct_sap()
+    sec_struct = {k: v[1] for k, v in sorted(sec_struct.items(), key=lambda item: item[1]) if v[0]!=0}
+    sec_struct = {k:remove_tlf_headings(v,csr) for k,v in sec_struct.items()}
+    sec_struct_list = list(sec_struct.keys())
+    sec_struct_list_whole = sec_struct_list
+
+    ### ethic, investigator, introductions lists are declared globally
+    csr_mapping_list = ethics_list + investigators_list + introduction_list + study_objectives_list + investigational_plan_list
+    sec_struct_list, csr_sections_list = sectionHeader_Flatten(sec_struct, csr_mapping_list, csr)
+    csr_sections_list = remove_tlf_headings(csr_sections_list,csr)
+    #remove section above abrreviation or ethics
+    abbr_list = [key for key in csr_sections_list if  bool(re.search('abbreviation|acronym', key.lower()))]
+    if abbr_list:
+        csr_sections_list = csr_sections_list[csr_sections_list.index(abbr_list[0]) +1 :]
+#    else:
+#        ethics_header = [key for key in csr_sections_list if  bool(re.search('ethics', key.lower()))]
+#        if ethics_header:
+#            csr_sections_list = csr_sections_list[csr_sections_list.index(ethics_header[0]):]
+    abbr_intext = get_abbr(csr_sections,csr)
+    csr_sections = {k.strip():v for k,v in csr_sections.items()}
+    # Extract Text below the table like footer text 
+    texts_below_table = csr.getTextBelowTable() 
+    
+    #Append text below the footer into same section to be QCed
+    for _cs, _v in csr_sections.items():
+        if _cs in texts_below_table.keys():
+            csr_sections[_cs] += "\n" + texts_below_table[_cs]
+    end_time = time.time() - start_time
+    print("--------- %s Minutes | HP 3 ---" % (end_time/60))
+
+    _percent = math.ceil(10 / doc_count) + prev_doc_exe_percent
+    progress_data = {"task":"Extracting sections from "+ doc_type +" file","percentage":_percent,"start_time":start_time,"end_time":time.time(),"time_zone":time_zone}
+    log_progress(progress_json_path,progress_data) 
+    
+    #extract and process doc
+    doc_csr_sections = doc_csr.getCSRSections_alt()
+
+    empty_section_sum = sum([val=="" for val in doc_csr_sections.values()])
+    if empty_section_sum == 0 or len(doc_csr_sections) == 0:
+        result = {"doc_res": [],
+                    "csr_sections_list":csr_sections_list,
+                    "sec_struct_list":sec_struct_list,
+                    "doc_type": doc_type}
+        outputFilePath = createSAPOutputfile(csr_path,result,doc_type,doc_path)
+        final_result = {#"data": result,
+                        "data" : outputFilePath,
+                        "status": 200,
+                        "message" : "success"
+                        }
+        return final_result
+    try:
+        sanity_check_perc = empty_section_sum/len(doc_csr_sections)
+    except:
+        result = {"doc_res": [],
+                    "csr_sections_list":csr_sections_list,
+                    "sec_struct_list":sec_struct_list,
+                    "doc_type": doc_type}
+        outputFilePath = createSAPOutputfile(csr_path,result,doc_type,doc_path)
+        final_result = {#"data": result,
+                        "data" : outputFilePath,
+                        "status": 200,
+                        "message" : "success"
+                        }
+        return final_result
+    if sanity_check_perc > 0.5:
+        doc_csr_sections_list = getSectionHeaders(doc_csr_sections)
+
+    doc_csr_sections_clean_list = remove_tlf_headings(list(doc_csr_sections.keys()),doc_csr)
+    doc_csr_sections = {k:doc_csr_sections[k] for k in doc_csr_sections_clean_list}
+    doc_csr_sections_list = getSectionHeaders(doc_csr_sections)
+
+    doc_csr_sections = {k.strip():v for k,v in doc_csr_sections.items()}
+    doc_csr_sections_list = [x.strip() for x in doc_csr_sections_list]
+
+    ## get the abbr list for doc csr
+    doc_abbr_intext = get_abbr(doc_csr_sections,doc_csr)
+
+    # doc_csr_sections_list = remove_tlf_headings(doc_csr_sections_list)
+    if doc_type== "Template":
+        doc_mapping_list = ethics_list + investigators_list
+    elif doc_type== "Protocol":
+        doc_mapping_list = introduction_list + study_objectives_list + investigational_plan_list
+    elif doc_type == "SAP":
+        doc_mapping_list = investigational_plan_list
+
+    doc_sec_struct = doc_csr.getCSRSectionHeaders_struct()
+    doc_sec_struct = {k: v[1] for k, v in sorted(doc_sec_struct.items(), key=lambda item: item[1]) if v[0]!=0}
+
+    if doc_sec_struct == {}:
+        doc_sec_struct = doc_csr.getCSRSectionHeaders_struct(heading_style="2")
+
+        doc_sec_struct = {k: v[1] for k, v in sorted(doc_sec_struct.items(), key=lambda item: item[1]) if v[0]!=0}
+
+    _, csr_sections_list_for_doc = sectionHeader_Flatten(sec_struct, doc_mapping_list, csr)
+    end_time = time.time() - start_time
+    print("--------- %s Minutes | HP 4 ---" % (end_time/60))
+
+    _percent = math.ceil(14 / doc_count) + prev_doc_exe_percent
+    
+    if doc_type == "SAP" or doc_type == "Protocol":
+        progress_data = {"task":"Extracting sub-sections of a CSR section 9.7 for "+ doc_type + " QC","percentage":_percent,"start_time":start_time,"end_time":time.time(),"time_zone":time_zone}
+        log_progress(progress_json_path,progress_data) 
+    
+    ## getting 9.7 section headings
+    if doc_type == "SAP" :
+        new_csr_section_list = getStatisticalSectionNames(csr_sections_list_for_doc,False)
+        if new_csr_section_list:
+            csr_sections_list_for_doc = new_csr_section_list
+        else:
+            ## if there is no "statatical related to section found in CSR so nothing else to be QCed with SAP
+            result = {"doc_res": [],"csr_sections_list":csr_sections_list,"sec_struct_list":sec_struct_list,"doc_type": doc_type}
+
+    
+            outputFilePath = createSAPOutputfile(csr_path,result,doc_type,doc_path)
+            if outputFilePath:
+                final_result = {#"data": result,
+                                "data" : outputFilePath,
+                                "status": 200,
+                                "message" : "success"
+                                }
+            else:
+                final_result = {"data" : outputFilePath,
+                                "status": 400,
+                                "message" : "failed"
+                                }
+                
+    
+            logger.info(checkName + " " + doc_type + " " + "Process Completed")
+            #logger.info(checkName + " " + doc_type + " " + "result : " + str(result))
+    
+            return final_result            
+    end_time = time.time() - start_time
+    print("--------- %s Minutes | HP 5 ---" % (end_time/60))
+
+    _percent = math.ceil(17 / doc_count) + prev_doc_exe_percent
+    progress_data = {"task":"Filtering sections for " +doc_type+ " QC","percentage":_percent,"start_time":start_time,"end_time":time.time(),"time_zone":time_zone}
+    log_progress(progress_json_path,progress_data) 
+    
+    #remove section above abrreviation
+    if doc_type == 'Template':
+        toc_section = [idx for idx, x in enumerate(doc_csr_sections_list) if bool(re.search(r'^Table of Content(?:s)?|Content(?:s)?', x, re.I))]
+        abbrev_section = [idx for idx, x in enumerate(doc_csr_sections_list) if bool(re.search('abbreviation|acronym', x, re.I))]
+        if len(toc_section) > 0 and len(abbrev_section) > 0:
+            toc_section_idx = toc_section[0]
+            abbrev_section_idx = abbrev_section[0]
+            if toc_section_idx < abbrev_section_idx:
+                sec_start_idx = abbrev_section_idx + 1
+            else:
+                sec_start_idx = toc_section_idx + 1
+        elif len(abbrev_section) > 0:
+            sec_start_idx = abbrev_section[0] + 1
+        elif len(toc_section) > 0:
+            sec_start_idx = toc_section[0] + 1
+        else:
+            sec_start_idx = 0
+        doc_csr_sections_list = doc_csr_sections_list[sec_start_idx:]
+    else:
+        assessment_schedule_key = [key for key in doc_csr_sections_list if  bool(re.search('schedule of assessments|assessments schedule', key.lower()))]
+
+        abbr_list = [key for key in doc_csr_sections_list if  bool(re.search('abbreviation|acronym', key.lower()))]
+        try:
+            if abbr_list:
+                index_abbrList = doc_csr_sections_list.index(abbr_list[0])
+                if len(doc_csr_sections_list) - index_abbrList <=3:
+                    for section in doc_csr_sections_list:
+                        if bool(re.search(r'^Table of Content(?:s)?|Content(?:s)?', section, re.I)):
+                            tocIndex = doc_csr_sections_list.index(section)
+                            if tocIndex:    
+                                break
+                    doc_csr_sections_list = doc_csr_sections_list[tocIndex + 1 :]
+                    doc_csr_sections_list = doc_csr_sections_list + assessment_schedule_key
+                else:
+                    doc_csr_sections_list = doc_csr_sections_list[doc_csr_sections_list.index(abbr_list[0]) +1 :]
+                    doc_csr_sections_list = doc_csr_sections_list + assessment_schedule_key
+            else:
+                intro_header = [key for key in doc_csr_sections_list if  bool(re.search('introduction', key.lower()))]
+                if intro_header:
+                    doc_csr_sections_list = doc_csr_sections_list[doc_csr_sections_list.index(intro_header[0]):]
+                    doc_csr_sections_list = doc_csr_sections_list + assessment_schedule_key
+        except:
+            import traceback
+            traceback.print_exc()
+            intro_header = [key for key in doc_csr_sections_list if  bool(re.search('introduction', key.lower()))]
+            if intro_header:
+                doc_csr_sections_list = doc_csr_sections_list[doc_csr_sections_list.index(intro_header[0]):]
+                doc_csr_sections_list = doc_csr_sections_list + assessment_schedule_key
+    end_time = time.time() - start_time
+    print("--------- %s Minutes | HP 6 ---" % (end_time/60))
+
+    _percent = math.ceil(20 / doc_count) + prev_doc_exe_percent
+    progress_data = {"task":"Section mapping started for " + doc_type,"percentage":_percent,"start_time":start_time,"end_time":time.time(),"time_zone":time_zone}
+    log_progress(progress_json_path,progress_data) 
+    
+#    csr_sections_list_for_doc = [x.strip() for x in csr_sections_list_for_doc ]
+    csr_sections_list_for_doc = [x.strip() for x in csr_sections_list_for_doc if not x.strip().lower().startswith('table gbgj')]
+    if doc_mapping:
+        doc_csr_sections = handle_multi_map(doc_mapping_kv,doc_csr_sections,  sep_key)
+        csr_doc_section_match_dict = section_similarity_config_new(doc_mapping_kv)
+    else:
+        csr_doc_section_match_dict = section_similarity_alt_3(csr_sections_list_for_doc, doc_csr_sections_list, csr_sections, doc_csr_sections, doc_csr)
+        #print(csr_doc_section_match_dict)
+    if doc_type == 'Template':
+        pass
+    else:
+        if not doc_mapping:
+            doc_csr_sections , csr_doc_section_match_dict = handle_subsections(csr_sections_list_for_doc,sec_struct_list,sec_struct_list_whole, doc_sec_struct,csr_sections,doc_csr_sections,csr_doc_section_match_dict,csr,sep_key)
+
+    try:
+        _percent = math.ceil(23 / doc_count) + prev_doc_exe_percent
+        progress_data = {"task":doc_type + " QC started","percentage":_percent,"start_time":start_time,"end_time":time.time(),"time_zone":time_zone}
+        log_progress(progress_json_path,progress_data) 
+        
+        doc_doc_text_listing = doc_csr.getCSRListText()
+        end_time = time.time() - start_time
+        print("--------- %s Minutes | HP 7 ---" % (end_time/60))
+        doc_res = csr.getSectionMatchPositions(csr_doc_section_match_dict, csr_sections, doc_csr_sections, doc_type,abbr_intext, None, doc_doc_text_listing,doc_abbr_intext)
+        end_time = time.time() - start_time
+        print("--------- %s Minutes | HP 8 ---" % (end_time/60))
+
+        _percent = math.ceil(65 / doc_count) + prev_doc_exe_percent
+        progress_data = {"task":"Section re-mapping started for " + doc_type,"percentage":_percent,"start_time":start_time,"end_time":time.time(),"time_zone":time_zone}
+        log_progress(progress_json_path,progress_data) 
+        
+        #load blank doc sen
+        doc_res,doc_res_blank_sen = remove_blankdocsen(doc_res)
+        if doc_mapping:
+            
+            # Modify old results 
+            
+            if len(previous_res_data) and doc_type == previous_res_doc_type:
+                for inddx, each in enumerate(previous_res_data):
+                    for each_doc_res in doc_res:
+                        if each_doc_res["csr_heading"] == each["csr_heading"]:
+                            each_doc_res["manual_mapping"] = True
+                            previous_res_data[inddx]  =  each_doc_res
+                            
+                doc_res = previous_res_data
+            
+            
+            
+            result = {"doc_res":doc_res,"csr_sections_list":csr_sections_list,"sec_struct_list":sec_struct_list}
+            logger.info(checkName + " " + doc_type + " " + "Process completed")
+            logger.info(checkName + " " + doc_type + " " + "result : " + str(result))
+            outputFilePath = createSAPOutputfile(csr_path,result,doc_type,doc_path)
+            final_result = {#"data": result,
+                            "data":outputFilePath,
+                            "status": 200,
+                            "message" : "success"}
+            return final_result
+        else:
+            if doc_type == 'Template':
+                pass
+            else:
+                doc_blank_dict = {sec["csr_heading"]:[] for sec in doc_res}
+                #handle if para is present in another section
+                doc_res_blank_sen = [x for x in doc_res_blank_sen if x["match_positions"] ]
+                
+                doc_blank_dict, doc_res_blank_sen = compute_doc_blank_dict(doc_blank_dict, doc_res_blank_sen, doc_csr_sections, doc_csr_sections_list)
+
+                #### MACHINE 2
+                # doc_csr_sections_emb = {k:(v,nlp_model(csr.cleanText(v))) for k,v in doc_csr_sections.items() }
+                # for sec in doc_res_blank_sen:
+                #     for x in sec["match_positions"]:
+                #         x["csr_sentence"] = (x["csr_sentence"],nlp_model(csr.cleanText(x["csr_sentence"])))
+                # for sec in doc_res_blank_sen:
+                #     for doc_sec in doc_csr_sections:
+                #         if doc_csr_sections[doc_sec].strip() != "":
+                #             sen2 = doc_csr_sections_emb[doc_sec][1]
+                #             for x in sec["match_positions"]:
+                #                 sen1 = x["csr_sentence"][1]
+                #                 sim = sen1.similarity(sen2)
+                #                 if  sim > 0.85 and doc_sec!= sec["mapped_heading"] and doc_sec in doc_csr_sections_list:
+                #                     doc_blank_dict[sec["csr_heading"]].append((doc_sec,x["csr_sentence"][0]))
+                # for sec in doc_res_blank_sen:
+                #     for x in sec["match_positions"]:
+                #         x["csr_sentence"] = x["csr_sentence"][0]
+                
+                doc_blank_dict_1 = {k:[x[0] for x in v ] for k,v in doc_blank_dict.items() if v }
+                doc_blank_dict_1 = {k:list(set([(v.count(x),x) for x in v])) for k,v in doc_blank_dict_1.items()}
+                doc_blank_dict_1 = {k:max(v) for k,v in doc_blank_dict_1.items() if v}
+                doc_blank_dict_1 = {k:[v[1]] for k,v in doc_blank_dict_1.items() if v[0] > 1 }
+                for sec in doc_blank_dict_1:
+                    for x in doc_blank_dict[sec]:
+                        if doc_blank_dict[sec].count(x) > 1 :
+                            doc_blank_dict_1[sec].append(x[0])
+                doc_blank_dict_1 = {k:list(set(v)) for k,v in doc_blank_dict_1.items()}
+                
+                #re process word matching
+                try:
+                    csr_doc_section_match_dict_new = {}
+                    for sec in doc_blank_dict_1.keys():
+                        intial_map = csr_doc_section_match_dict[sec][2]
+                        ### joining sections using sep key
+                        target_sec_name = sep_key.join([intial_map] + doc_blank_dict_1[sec])
+                        sections_list = [intial_map] + doc_blank_dict_1[sec]
+                        doc_csr_sections[target_sec_name] = " ".join([doc_csr_sections[x] for x in sections_list])
+                        csr_doc_section_match_dict_new[sec] = [csr_doc_section_match_dict[sec][0],csr_doc_section_match_dict[sec][1],target_sec_name]
+
+                except:
+                    import traceback
+                    traceback.print_exc()
+                    pass
+                #redo the word-word match
+                doc_res_multi_sec = csr.getSectionMatchPositions(csr_doc_section_match_dict_new, csr_sections, doc_csr_sections, doc_type,abbr_intext, None, doc_doc_text_listing,doc_abbr_intext)
+                for r in doc_res_multi_sec:
+                    mapped_sen_list = [x["doc_sentence"] for x in r["match_positions"] if x["doc_sentence"]]
+                    sec_list = []
+                    for x in mapped_sen_list:
+                        for y in r["mapped_heading"].split(sep_key):
+                            if x in doc_csr_sections[y]:
+                                sec_list.append(y)
+                    sec_list = list(set(sec_list))
+                    if sec_list:
+                        if "_" in r["csr_heading"] and "adverse events" in r["csr_heading"].lower() and int(r["match_score"]) == 1 and "adverse event" in [j.lower() for j in sec_list]:
+                            pass
+                        elif any(["drug " + let_ in r["csr_heading"].strip().lower()[:6] for let_ in "abcd"]) and any(["drug " + let_ in sep_key.join(list(set(sec_list))).split("+$$+")[0].strip().lower()[:6] for let_ in "abcd"]):
+                            pass
+                        else:
+                            sec_list.reverse()
+                        r["mapped_heading"] = sep_key.join(list(set(sec_list)))
+                doc_res = [x for x in doc_res if x["csr_heading"] not in doc_blank_dict_1.keys()]
+                doc_res = doc_res + doc_res_multi_sec
+                doc_res,doc_res_blank_sen = remove_blankdocsen(doc_res)
+
+            ## Cleaning the headings and updating the section Occurence count
+            for res_idx, eachResult in enumerate(doc_res):
+                try:
+                    eachResult['csrHeadingOccurence'] = getTextOccurence(eachResult['csr_heading'],"_",1)
+                    eachResult['mappedHeadingOccurence'] = getTextOccurence(eachResult['mapped_heading'],"_",1)
+    #                eachResult['csr_heading'] = gettableNameSplit(eachResult['csr_heading'],"_")
+    #                eachResult['mapped_heading'] = gettableNameSplit(eachResult['mapped_heading'],"_")
+                    # Clean Result Sentences
+                    for sent_idx, sent_result in enumerate(eachResult["match_positions"]):
+                        if doc_res[res_idx]["match_positions"][sent_idx]["csr_sentence"].strip() != "":
+                            sent_pros = doc_res[res_idx]["match_positions"][sent_idx]["csr_sentence"]
+                            sent_pros = sent_pros.strip()
+                            if sent_pros[-1:] == "." and sent_pros[-2:-1] in string.punctuation:
+                                sent_pros = sent_pros[:-1]
+                            doc_res[res_idx]["match_positions"][sent_idx]["csr_sentence"] = sent_pros
+                        if doc_res[res_idx]["match_positions"][sent_idx]["doc_sentence"].strip() != "":
+                            doc_sent_pros = doc_res[res_idx]["match_positions"][sent_idx]["doc_sentence"]
+                            doc_sent_pros = doc_sent_pros.strip()
+                            if doc_sent_pros[-1:] == "." and doc_sent_pros[-2:-1] in string.punctuation:
+                                doc_sent_pros = doc_sent_pros[:-1]
+                            doc_res[res_idx]["match_positions"][sent_idx]["doc_sentence"] = doc_sent_pros
+                except:
+                    import traceback
+                    traceback.print_exc()
+                    pass
+
+            """            
+            if doc_type == "Protocol" or doc_type == "Template" or doc_type == "SAP":
+
+                ## Table comparison
+                csr_sections = csr.getCSRSections(removehead=True,removeNumbers=True,isTable=True,tableHeader = False)
+                if "" not in csr_sections.keys():
+                    csr_sections[''] = ""
+                    
+                csr_sections_tables = csr.getCSRSections_tables_check15(removehead=True,removeNewLine = True,tableHeader = False)
+                if "" not in csr_sections_tables.keys():
+                    csr_sections_tables[''] = []
+                
+                ## below function to get tablename and table
+                csr_table_records,csr_table_tfl = mapTableCsrSection1(csr_sections_tables,csr_sections,csr)
+                if len(csr_table_records)>0:
+                    csr_sections_tables.update(csr_table_records)
+                
+                ## section heading maps
+    #            csr_struct = csr.getCSRSectionHeaders_struct()
+                
+                table_sec_mapping = csr.extractTablesWithNameAndSections(forceSubheadingAsMainHeading = True)
+                
+                ## filtering tables which are part of section 5 to section 9
+                csr_sections_tables = {}
+                for eachRec in table_sec_mapping:
+    #                if eachRec["main_heading"] in csr_struct.keys() and csr_struct[eachRec["main_heading"]][0] < 9:
+                    if eachRec["main_heading"] in csr_sections_list_for_doc or eachRec["sub_heading"] in csr_sections_list_for_doc:
+                        csr_sections_tables[eachRec["table_name"]]= [eachRec["table_data"],eachRec["main_heading"],eachRec["sub_heading"]]
+                        
+                doc_csr_sections = doc_csr.getCSRSections(removehead=True,removeNumbers=True,isTable=True,tableHeader = False)
+                if "" not in csr_sections.keys():
+                    csr_sections[''] = ""
+                
+                doc_csr_sections_tables = doc_csr.getCSRSections_tables_check15(removehead=True,removeNewLine = True,tableHeader = False)
+                if "" not in doc_csr_sections_tables.keys():
+                    doc_csr_sections_tables[''] = []
+                
+                ## below function to get tablename and table
+                doc_csr_table_records,doc_csr_table_tfl = mapTableCsrSection1(doc_csr_sections_tables,doc_csr_sections,doc_csr)
+                if len(doc_csr_table_records)>0:
+                    doc_csr_sections_tables.update(doc_csr_table_records)
+                    
+                ##filter the tables
+                doc_csr_sections_tables = {k:v for k,v in doc_csr_sections_tables.items() if re.match(r'Table\s[A-Z]{,4}[0-9\.\-]{1,}',k)}
+                   
+                mappedTables = mapTablesNames(csr,list(csr_sections_tables.keys()), list(doc_csr_sections_tables.keys()))
+                
+                for csr_tbl_name, doc_tbl_name in mappedTables.items():
+                    # if "Table 4" not in csr_tbl_name:
+                    #     continue
+                    try :
+                    ############  If sub heading is absent ten assign heading to subheading value ########################
+                        if csr_sections_tables[csr_tbl_name][2] == "":
+                            csr_sections_tables[csr_tbl_name][2] = csr_sections_tables[csr_tbl_name][1]
+                    ######################################################################################################
+                        if not doc_tbl_name:
+                            ##adding values to json
+                            tableJson = {"inTextTableName" :csr_tbl_name,
+                                         "rawSourceData" : [],
+                                         "table_match_status" :"No Match",
+                                         "postTextTableTFL": doc_tbl_name,
+                                         "posttext_table_multi": False,
+                                         "csrToSourceData": []
+                                       }
+                            
+                            doc_res.append(sap_json_structure(1,doc_type,csr_sections_tables[csr_tbl_name][2],"",0.0,"No Match",[],1,1,"",tableJson))
+                            continue
+                        ### Convert tables to dataframe
+                        table_df_posttext_mat = pd.DataFrame(cleanTable_2(doc_csr_sections_tables[doc_tbl_name][0])) ##.values
+                        table_df_intext_mat = pd.DataFrame(cleanTable_2(csr_sections_tables[csr_tbl_name][0]))
+
+                        if str(table_df_intext_mat.columns.dtype) != "int64":
+                            table_df_intext_mat = addHeaderAsFirstRow(table_df_intext_mat)
+
+                        if str(table_df_posttext_mat.columns.dtype) != "int64":
+                            table_df_posttext_mat = addHeaderAsFirstRow(table_df_posttext_mat)
+
+                        ## Update row headers in case of empty rows to handle repeating row header names
+                        table_df_posttext_mat_1 = transform_index_pm(table_df_posttext_mat)
+                        table_df_intext_mat_1 = transform_index_pm(table_df_intext_mat)
+                        
+
+                        
+                        ### Comparing the CSR(intext) to SOURCE(posttext) tables
+                        row_scores = get_mat_scores_new(table_df_intext_mat_1, table_df_posttext_mat_1, xtype='row')
+                        try:
+                            col_scores = get_mat_scores_new(table_df_intext_mat, table_df_posttext_mat, xtype='column')
+                        except:
+                            import traceback
+                            traceback.print_exc()
+                            #If table heading is plan text or not specified as columns to integer column range converted into string
+                            table_df_intext_mat.columns = table_df_intext_mat.columns.astype(str)
+                            table_df_posttext_mat.columns = table_df_posttext_mat.columns.astype(str) 
+                            col_scores = get_mat_scores_new(table_df_intext_mat, table_df_posttext_mat, xtype='column')
+                            
+                        res = get_table_source_match(csr, table_df_intext_mat.values, table_df_posttext_mat.values, row_scores, col_scores, extract_thresh_dict=None)
+
+                        
+                         ## Getting the final status of table comparison
+                        final_res_df = pd.DataFrame(res)
+                        status_dict = final_res_df['match_status'].value_counts()
+                        if "Match" in status_dict.keys():
+                            ## if all cell status are "match"
+                            if status_dict['Match'] == len(final_res_df):
+                                total_score, table_match_status = 1.0, "Match"
+                            ## if atleast one cell status is other than "Match"
+                            else:
+                                total_score, table_match_status = 0.50, "Partial Match"
+                        elif "No Match" in status_dict.keys():
+                            ## if all cell status are "no match"
+                            if status_dict['No Match'] == len(final_res_df):
+                                total_score, table_match_status = 0.0, "No Match"
+                            else:
+                                total_score, table_match_status = 0.50, "Partial Match"
+                        else:
+                            total_score, table_match_status = 0.50,"Partial Match"
+                        
+                        ##adding values to json
+                        tableJson = {"inTextTableName" :csr_tbl_name,
+                                     "rawSourceData" : createTableJson(doc_tbl_name,doc_csr_sections_tables[doc_tbl_name][0],doc_path),
+                                     "table_match_status" :table_match_status,
+                                     "postTextTableTFL": doc_tbl_name,
+                                     "posttext_table_multi": False,
+                                     "csrToSourceData": res
+                                     }
+                        doc_res.append(sap_json_structure(1,doc_type,csr_sections_tables[csr_tbl_name][2], doc_tbl_name,total_score,table_match_status,[],1,1,"",tableJson))
+                    except:
+                        import traceback
+                        traceback.print_exc()
+                        pass
+            """
+            result = {"doc_res":doc_res,"csr_sections_list":csr_sections_list,"sec_struct_list":sec_struct_list,"doc_type": doc_type}
+            end_time = time.time() - start_time
+            print("--------- %s Minutes ---" % (end_time/60))
+
+            outputFilePath = createSAPOutputfile(csr_path,result,doc_type,doc_path)
+            if outputFilePath:
+                final_result = {#"data": result,
+                                "data" : outputFilePath,
+                                "status": 200,
+                                "message" : "success"
+                                }
+            else:
+                final_result = {"data" : outputFilePath,
+                                "status": 400,
+                                "message" : "failed"
+                                }
+
+            _percent = math.ceil(90 / doc_count) + prev_doc_exe_percent
+            progress_data = {"task":doc_type + " QC completed and returned results","percentage":_percent,"start_time":start_time,"end_time":time.time(),"time_zone":time_zone}
+            log_progress(progress_json_path,progress_data)            
+
+            logger.info(checkName + " " + doc_type + " " + "Process Completed")
+            #logger.info(checkName + " " + doc_type + " " + "result : " + str(result))
+
+            return final_result
+    except Exception as comp_err:
+        exc_type, exc_value, exc_traceback = sys.exc_info()
+        line_no = exc_traceback.tb_lineno
+        print(f"Exception caught at line {line_no}")
+        print("Error occurred in comparision function: ", str(comp_err))
+        final_result = {"data" : outputFilePath,
+                                "status": 400,
+                                "message" : "failed"
+                                }
+        return final_result
+
+## save th output into json file
+def createSAPOutputfile(filePath,outputJson,doc_type,doc_path):
+    
+    fullPath = ""
+    
+    try:
+    
+        basePath = os.path.dirname(filePath)
+        doc_file_name = Path(doc_path).stem
+        
+        ##create Python output
+        outputFolderPath = os.path.join(basePath,"python_outputs")
+        if not os.path.exists(outputFolderPath):
+            os.mkdir(outputFolderPath)
+        
+        ## create file name
+#        tempFileName = doc_type + "_" + re.sub(r'[\-\s:\.]','',str(datetime.now().replace(microsecond=0))) +".json"
+        tempFileName = doc_type + "_" + doc_file_name +".json"
+     
+        fullPath = os.path.join(outputFolderPath,tempFileName)
+        
+        saveFile = open(fullPath,"w")
+        json.dump(outputJson,saveFile,indent = 6)
+        saveFile.close()
+    except:
+        import traceback
+        traceback.print_exc()
+        pass
+    
+    return fullPath
+
+def add_counter_in_list(input_list):
+        output_list=[]
+        counter={}
+        for item in input_list:
+            if item in counter:
+                counter[item] +=1
+                modified_item =f"{item}_{counter[item]}"
+            else:
+                counter[item]=1
+                modified_item=item
+            output_list.append(modified_item)
+        return output_list
+    
+## created new function to get the table 1 rows and columns match with the table 2 rows and columns
+def get_mat_scores_new(table1, table2, xtype='row'):
+
+    record_mapping = {}
+
+    if xtype == 'row':
+        rec_table1 = list(table1.iloc[:,0])
+        rec_table2 = list(table2.iloc[:,0])
+    elif xtype == 'column':
+        rec_table1 = list(table1.columns)
+        rec_table2 = list(table2.columns)
+        
+    rec_table1_=add_counter_in_list(rec_table1)
+    rec_table2_=add_counter_in_list(rec_table2)
+
+    record_mapping = record_mapping_bert(rec_table1_,rec_table2_)
+               
+    return record_mapping
+
+def get_table_source_match(csr,table1_values, table2_values, row_scores, col_scores, extract_thresh_dict=None):
+    res = []
+    for t1_row_id, t1_row_values in enumerate(table1_values):
+        ## get table 2 records from row mappings
+        t2_row_matched = row_scores[t1_row_id]
+        t2_row_values = table2_values[t2_row_matched]
+        rowFlag = False
+        ## saving column zero match status
+        col_zero_match_status = ""
+        for t1_col_id, t1_col_val in enumerate(t1_row_values):
+            if t1_col_id == 0:
+                t2_col_matched = 0
+                t2_col_val = t2_row_values[0]
+            else:
+                t2_col_matched = col_scores[t1_col_id]
+                t2_col_val = t2_row_values[t2_col_matched]
+                
+            ##if first column status is NO MATCH, assigning other column records to NO MATCH
+            if col_zero_match_status == "No Match":
+                score = 0.0
+                match_status = "No Match"
+            else:
+                if  t1_col_id == 0:
+                    score = float(round(csr.cosine_similarity_bert(clean_table_cell(t1_col_val.lower()), clean_table_cell(t2_col_val.lower())),2))
+                else:
+                    score = float(round(csr.cosine_similarity_tf(clean_table_cell(t1_col_val.lower()), clean_table_cell(t2_col_val.lower())),2))
+                match_status = getMatchStatus(score)
+            ##If first column, saving the status
+            if t1_col_id == 0:
+                col_zero_match_status = match_status
+
+            res_it_dict = {'intext_row_id':t1_row_id,'intext_col_id':t1_col_id,'intext_value':t1_col_val,
+                           'posttext_row_id':t2_row_matched,'posttext_col_id':t2_col_matched,'posttext_value':t2_col_val,
+                           'match_score':score, 'match_status' : match_status}
+
+            res.append(res_it_dict)
+
+    return res
+
+def clean_table_cell(txt):
+    #txt = txt.strip().replace("(", " ").replace(")", " ").replace("  ", "").lower()
+    txt = re.sub(r'[%\(\[\]\),]'," ",txt).strip().lower()
+    txt = re.sub(r'\s{2,}',' ',txt).strip()
+#        txt_list = txt.split(" ")
+    return txt
+
+# ##compare table names and map it
+# def mapTablesNames(csr,csr_tableNames, doc_tableNames):
+    
+#     res = {}
+    
+#     for tblName in csr_tableNames:
+#         res[tblName] = ""
+#         for docTblName in doc_tableNames:
+#             model_2.max_seq_length = 512
+#             embeddings_tblName = model_2.encode(tblName, convert_to_tensor=True,batch_size= 32, show_progress_bar = False)
+#             embeddings_docTblName = model_2.encode(docTblName, convert_to_tensor=True,batch_size= 32, show_progress_bar = False)
+#             score = float(util.cos_sim(embeddings_tblName, embeddings_docTblName)) 
+#             # score = float(round(csr.cosine_similarity_bert(tblName,docTblName),2))
+#             if score > 0.65 :
+#                 res[tblName] = docTblName
+#                 if score >0.9:
+#                     break
+                
+#     return res
+                
+def createTableJson(tblName, tableDict, filePath):
+    
+    df = pd.DataFrame(tableDict)
+    recordsJson = []
+    for colName, colValues in df.to_dict(orient="list").items():
+        recJson = {"headerName" : colName,
+                   "subColumnList" : colValues}
+        recordsJson.append(recJson)
+    
+    res = [{
+            "columnHeaders": list(tableDict[0].keys()),
+            "records" :recordsJson ,
+            "rtfFileName" :filePath,
+            "tableName": tblName,
+            "tableNumber":tblName
+          }]
+        
+    return res
+
+## below function will get the 9.7 section headings 
+## by looking the keywords of 9.7 start section and 
+## stopping at next section heading
+def getStatisticalSectionNames(csr_sections_list ,chkProtocol = True):
+    
+    startIdx, endIdx = 0,0
+    for idx, secName in enumerate(csr_sections_list):
+        secName = secName.lower()
+        ##checking statistical section start Index
+        if startIdx == 0 and ("statistical" in secName or "statistic" in secName) :
+            if chkProtocol and "protocol" in secName:
+                break
+            startIdx = idx
+            continue
+        ## checking next main sub section after statistical section
+        if startIdx > 0  and "changes" in secName and ("conduct of the study" in secName or "planned analyses" in secName):
+            endIdx = idx
+            break
+    if startIdx > 0 and endIdx > 0:
+        return csr_sections_list[startIdx:endIdx]
+    return []
+
+
+def readJson(filePath):
+    data = {}
+    try:
+        file = open(filePath,'r')
+        data = json.load(file)
+        file.close()
+    except:
+        import traceback
+        traceback.print_exc()
+        pass
+    
+    return data
+
+
+
+
+
+def default_mapping():
+    checkName = "Default map"
+    data = request.json
+    csr_path = data['csr_path']
+    doc_path = data['doc_path']
+    doc_type = data['doc_type']
+    final_result = {}
+       
+
+    logger.info(checkName + " " + doc_type + " " + "Process started")
+    ### SAP file is optional, if doc path is empty when type is SAP
+    ### return empty mappings
+    if len(doc_path) == 0 and (doc_type == "SAP" or doc_type == "Template"):
+        final_res = []
+        logger.info(checkName + " " + doc_type + " " + str(final_res))
+        logger.info(checkName + " " + doc_type + " " + "Process completed")
+        return jsonify(final_res)
+
+    # verifying the documents
+    try:
+        fileName = os.path.basename(csr_path)
+        csr = DocQCService(csr_path)
+        csr_sections = csr.getCSRSections_alt_sap_default()
+    except Exception as e:
+        logger.exception(e)
+        csr_sections = []
+
+    if len(csr_sections) == 0:
+        return errJsonMsg("Error - " + fileName + " is not in true docx format")
+
+    try:
+        fileName = os.path.basename(doc_path)
+        doc_csr = DocQCService(doc_path)
+        doc_csr_sections = doc_csr.getCSRSections_alt_sap_default()
+    except Exception as e:
+        logger.exception(e)
+        doc_csr_sections = []
+
+    if len(doc_csr_sections) == 0:
+        return errJsonMsg("Error - " + fileName + " is not in true docx format")
+
+    ## check the csr_sections
+    if len(csr_sections)>0:
+        sanity_check_perc = sum([val=="" for val in csr_sections.values()])/len(csr_sections)
+        if sanity_check_perc > 0.5:
+            csr_sections = csr.getCSRSections()
+    else:
+        csr_sections = csr.getCSRSections()
+
+    csr_sections_clean_list = remove_tlf_headings(list(csr_sections.keys()),csr)
+    csr_sections = {k:csr_sections[k] for k in csr_sections_clean_list}
+    csr_sections_list = getSectionHeaders(csr_sections)
+
+    ### Section Header - Sub Section Mapping
+    sec_struct = csr.getCSRSectionHeaders_struct_sap()
+    sec_struct = {k: v[1] for k, v in sorted(sec_struct.items(), key=lambda item: item[1]) if v[0]!=0}
+    sec_struct = {k:remove_tlf_headings(v,csr) for k,v in sec_struct.items()}
+    sec_struct_list = list(sec_struct.keys())
+    #sec_struct_list_whole = sec_struct_list
+
+    ### ethic, investigator, introductions lists are declared globally
+    csr_mapping_list = ethics_list + investigators_list + introduction_list + study_objectives_list + investigational_plan_list
+    sec_struct_list, csr_sections_list = sectionHeader_Flatten(sec_struct, csr_mapping_list, csr)
+    csr_sections_list = remove_tlf_headings(csr_sections_list,csr)
+    #remove section above abrreviation or ethics
+    abbr_list = [key for key in csr_sections_list if  bool(re.search('abbreviation|acronym', key.lower()))]
+    if abbr_list:
+        csr_sections_list = csr_sections_list[csr_sections_list.index(abbr_list[0]) +1 :]
+    ## commented code - in parexel study objectives are above ethics, which is removing those information
+#    else:
+#        ethics_header = [key for key in csr_sections_list if  bool(re.search('ethics', key.lower()))]
+#        if ethics_header:
+#            csr_sections_list = csr_sections_list[csr_sections_list.index(ethics_header[0]):]
+#
+    #abbr_intext = get_abbr(csr_sections,csr)
+    csr_sections = {k.strip():v for k,v in csr_sections.items()}
+    
+    csr_sections_clean_list = remove_tlf_headings(list(doc_csr_sections.keys()),csr)
+    doc_csr_sections = {k:doc_csr_sections[k] for k in csr_sections_clean_list} 
+
+    #extract and process doc
+    doc_csr_sections_list = getSectionHeaders(doc_csr_sections)
+
+    sanity_check_perc = sum([val=="" for val in doc_csr_sections.values()])/len(doc_csr_sections)
+    if sanity_check_perc > 0.5:
+        doc_csr_sections = doc_csr.getCSRSections()
+        doc_csr_sections_list = getSectionHeaders(doc_csr_sections)
+
+    doc_csr_sections = {k.strip():v for k,v in doc_csr_sections.items()}
+    doc_csr_sections_list = [x.strip() for x in doc_csr_sections_list]
+    
+    
+    #Code to find final.json file and create mapping from json file in case final.json was created using same source doc file name.
+    try:
+        basePath = os.path.dirname(csr_path)
+        outputFolderPath = os.path.join(basePath,"python_outputs")  
+        final_file_path = outputFolderPath + "/final.json"
+        if os.path.exists(final_file_path):
+            source_file_name = os.path.basename(doc_path)
+            final_all_data = readJson(final_file_path)
+            _final_results = final_all_data["data"]
+            source_file_found = False
+            for each_res in _final_results:
+                if each_res["fileName"] == source_file_name:
+                    source_file_found = True
+                    break
+            
+            if source_file_found:
+                mappings = []
+                csr_section_mapped = []
+                doc_section_mapped = []
+                for each_res in _final_results:
+                    if each_res["mapping_type"] == doc_type:
+                        csr_section_mapped.append(each_res["csr_heading"])
+                        doc_section_mapped.append(each_res["mapped_heading"])
+                        sec_res = {
+                                 "csrKey":each_res["csr_heading"],
+                                 "sourceKey":each_res["mapped_heading"],
+                                 "csrFileName":Path(csr_path).stem,
+                                 "docFileName":Path(doc_path).stem,
+                                 "mappingType":"CSR_" + doc_type.upper()
+                                }                
+                        mappings.append(sec_res)
+                
+                #Append csr section(s) which are not part of final results with source document section
+                for _csr_sec in csr_sections_list:
+                    if _csr_sec not in csr_section_mapped:
+                        sec_res = {
+                                 "csrKey":_csr_sec,
+                                 "sourceKey": "",
+                                 "csrFileName":Path(csr_path).stem,
+                                 "docFileName":Path(doc_path).stem,
+                                 "mappingType":"CSR_" + doc_type.upper()
+                                }                
+                        mappings.append(sec_res)  
+                        
+                #Append source doc section(s) which are not part of final results with csr document section
+                for _doc_sec in doc_csr_sections_list:
+                    if _doc_sec not in doc_section_mapped:
+                        sec_res = {
+                                 "csrKey":"",
+                                 "sourceKey": _doc_sec,
+                                 "csrFileName":Path(csr_path).stem,
+                                 "docFileName":Path(doc_path).stem,
+                                 "mappingType":"CSR_" + doc_type.upper()
+                                }                
+                        mappings.append(sec_res)                
+                    
+                final_result = {"data": mappings,
+                                "status": 200,
+                                "message" : "success"}
+
+                # logger.info(checkName + " " + doc_type + " " + str(final_res))
+                logger.info(checkName + " " + doc_type + " " + "Process completed")
+
+                return final_result
+    except:
+        print("Something went wrong while creating mapping from final.json" )
+        logger.info("Something went wrong while creating mapping from final.json")    
+    
+
+    try:
+        ## doc_csr_sections_list = remove_tlf_headings(doc_csr_sections_list)
+        if doc_type== "Template":
+            doc_mapping_list = ethics_list + investigators_list
+        elif doc_type== "Protocol":
+            doc_mapping_list = introduction_list + study_objectives_list + investigational_plan_list
+        elif doc_type == "SAP":
+            doc_mapping_list = investigational_plan_list
+
+        doc_sec_struct = doc_csr.getCSRSectionHeaders_struct()
+        doc_sec_struct = {k: v[1] for k, v in sorted(doc_sec_struct.items(), key=lambda item: item[1]) if v[0]!=0}
+
+        if doc_sec_struct == {}:
+            doc_sec_struct = doc_csr.getCSRSectionHeaders_struct(heading_style="2")
+            doc_sec_struct = {k: v[1] for k, v in sorted(doc_sec_struct.items(), key=lambda item: item[1]) if v[0]!=0}
+
+        _, csr_sections_list_for_doc = sectionHeader_Flatten(sec_struct, doc_mapping_list, csr)
+
+        #remove section above abrreviation
+        if doc_type == 'Template':
+            pass
+        else:
+            assessment_schedule_key = [key for key in doc_csr_sections_list if  bool(re.search('schedule of assessments|assessments schedule', key.lower()))]
+            abbr_list = [key for key in doc_csr_sections_list if  bool(re.search('abbreviation|acronym', key.lower()))]
+            if abbr_list:
+#                doc_csr_sections_list = doc_csr_sections_list[doc_csr_sections_list.index(abbr_list[0]) +1 :]
+                ##Added condition to keep all headings after abbreviation section if abbreviation section present before half of document
+                ## if abbreviation section avaialble at the end of document then keep all headings from start of doc
+                if doc_csr_sections_list.index(abbr_list[0]) < int(len(doc_csr_sections_list) / 2):
+                    doc_csr_sections_list = doc_csr_sections_list[doc_csr_sections_list.index(abbr_list[0]) +1 :]
+                
+                doc_csr_sections_list = doc_csr_sections_list + assessment_schedule_key
+            else:
+                intro_header = [key for key in doc_csr_sections_list if  bool(re.search('introduction', key.lower()))]
+                if intro_header:
+                    doc_csr_sections_list = doc_csr_sections_list[doc_csr_sections_list.index(intro_header[0]):]
+                    doc_csr_sections_list = doc_csr_sections_list + assessment_schedule_key
+
+        csr_sections_list_for_doc = [x.strip() for x in csr_sections_list_for_doc ]
+        csr_doc_section_match_dict = section_similarity_alt_3(csr_sections_list_for_doc, doc_csr_sections_list, csr_sections, doc_csr_sections, doc_csr)
+    except Exception as e:
+        logger.exception(e)
+        return errJsonMsg("Error - " + fileName + " Unable to extract the section mappings")
+
+    final_res = []
+    doc_section_mapped = []
+    mapped_sections_to_csr = []
+    for sec in csr_doc_section_match_dict:
+        doc_section_mapped.append(csr_doc_section_match_dict[sec][2])
+        sec_res = {
+                 "csr_match_source": True,
+                 "csrKey":sec,
+                 "sourceKey":csr_doc_section_match_dict[sec][2],
+                 "csrFileName":Path(csr_path).stem,
+                 "docFileName":Path(doc_path).stem,
+                 "mappingType":"CSR_" + doc_type.upper()
+                }
+        mapped_sections_to_csr.append(csr_doc_section_match_dict[sec][2])
+        final_res.append(sec_res)
+        
+    #Append source doc section(s) which are not part of final results with csr document section
+    for _doc_sec in doc_csr_sections_list:
+        if _doc_sec in doc_section_mapped:
+            continue
+        sec_res = {
+                 "csrKey":"",
+                 "sourceKey": _doc_sec,
+                 "csrFileName":Path(csr_path).stem,
+                 "docFileName":Path(doc_path).stem,
+                 "mappingType":"CSR_" + doc_type.upper()
+                }                
+        final_res.append(sec_res)           
+        
+
+
+    for source_sction in doc_csr_sections_list:
+        if not source_sction in mapped_sections_to_csr:
+            sec_res = {
+                     "csr_match_source": False,
+                     "csrKey":"",
+                     "sourceKey":source_sction,
+                     "csrFileName":Path(csr_path).stem,
+                     "docFileName":Path(doc_path).stem,
+                     "mappingType":"CSR_" + doc_type.upper()
+                    }
+            final_res.append(sec_res)
+
+    final_result = {"data": {"mapping_list":final_res,"doc_csr_sections_list":doc_csr_sections_list},
+                    "status": 200,
+                    "message" : "success"
+                        }
+
+    # logger.info(checkName + " " + doc_type + " " + str(final_res))
+    logger.info(checkName + " " + doc_type + " " + "Process completed")
+    
+    return final_result
+
+def readJson(filePath):
+    data = {}
+    try:
+        file = open(filePath,'r')
+        data = json.load(file)
+        file.close()
+    except:
+        pass
+    
+    return data
+
+
+
+
+    def getMatchPositions(self, text1, text2, abbr_intext,doc_text_listing=None,doc_abbr_intext={}, checkName = ""):
+
+        from sentence_splitter import SentenceSplitter
+        from nltk.corpus import stopwords
+        stop_words = stopwords.words("english")
+        stop_words.remove("no")
+        splitter = SentenceSplitter(language="en")
+        stop_words = stopwords.words("english")
+        stop_words.remove("no")
+        
+        initial_text_1 = copy.deepcopy(text1)
+        initial_text_2 = copy.deepcopy(text2)
+        text1 = self.removeBulletNumbers(text1, ".. ")
+        text2 = self.removeBulletNumbers(text2, ".. ")
+        # :\n\n - start of the list
+#        text1 = text1.replace(":\n\n",":.. ")
+#        text2 = text2.replace(":\n\n",":.. ")
+        #\n\n para break
+#        text1 = text1.replace("\n\n","\n")
+#        text2 = text2.replace("\n\n","\n")
+
+        text1 = text1.replace(".. *",".. ")
+        text2 = text2.replace(".. *",".. ")
+        text2 = text2.replace('\ne.g.',' e.g.')
+        text2 = text2.replace('\n\nr',' r')
+        #split initially at new line to handle bullet points
+        #text1 = text1.split("\n")
+        #text2 = text2.split("\n")
+        text1 = re.split(r'\n',text1)
+        #text2 = re.split(r'\n(?=[A-Z0-9])|[:;]\n',text2)
+        text2 = re.split(r'\n',text2)
+
+        ##merging both abbr
+        if len(doc_abbr_intext) > 0 :
+            abbr_intext.update(doc_abbr_intext)
+
+        def handle_references(text):
+            #remove word.reference pattern  eg: word.12 where 12 is a non-hyperlinked ref
+            text_words = []
+            unique_table_pattern = re.findall(r'Table\s+[A-Z]+(?:\.\d+)+', text)
+            splitted_text = text.split()
+            unique_table_pattern_updated = []
+            if len(unique_table_pattern) > 0:
+                unique_table_pattern_updated = unique_table_pattern.copy()
+                for u_patt in unique_table_pattern:
+                    unique_table_pattern_updated.extend(u_patt.split())
+                unique_table_pattern_updated.remove("Table")    
+            for x in splitted_text:
+                # Handling Table format
+                if x in unique_table_pattern_updated:
+                    text_words.append(x)
+                elif re.findall("[a-z A-Z]+[a-z A-Z 0-9]+?[)]?[.][0-9]+",x):
+                    if x.split(".")[0].lower() == "gbgj":
+                        x = x.split(".")[0]
+                    else:
+                        x = x.split(".")[0] +"."
+                    text_words.append(x)
+                else:
+                    text_words.append(x)
+            text = " ".join(x for x in text_words)
+            return text
+
+        def removetrailperiod(text):
+            try:
+                if text[-4:] == "....":
+                    text = text[:len(text)-4]
+                elif  text[-2:] == "..":
+                    text = text[:len(text)-2]
+            except:
+                pass
+            return text
+
+        def has_numbers(inputString):
+            if any(char.isalpha() for char in inputString):
+                return False
+            else:
+                return any(char.isdigit() for char in inputString)
+
+        def fnReplaceWords(inputString,replaceKey=True):
+            replaceWords = {"approx. ":" $$ approx $$ ","e.g. ":" $$ e.g $$ ","al.":" $$ al $$ ","i.e.":" $$ i.e $$ " }
+            for key,value in replaceWords.items():
+                if replaceKey:
+                    inputString = inputString.replace(key,value)
+                else:
+                    inputString = inputString.replace(value,key)
+            return inputString
+
+        def split_text(text1):
+            text1 = " ".join(text1.split())
+            ## replace words
+            text1 = fnReplaceWords(text1,True)
+            #sentences1 = splitter.split(text1)
+            sentences1 = re.split(r'\.\s',text1)
+            sentences1 = [removetrailperiod(text) for text in sentences1]
+            sentences1 = [fnReplaceWords(text.replace("..",""),False) for text in sentences1]
+            return sentences1
+        
+        def abbr_as_sent_replacement(sen, abbr_intext):
+            try:
+                if len(sen.split()) == 1 and sen.endswith("s;") and len(sen) > 2 and sen[:-2].isupper():
+                    found_abbr = sen[:-2]
+                    if found_abbr in abbr_intext.keys():
+                        abbr_expended_form = abbr_intext[found_abbr]+ "s"
+                        sen = abbr_expended_form
+                return sen
+            except:
+                return sen
+        
+#        if doc_text_listing is not None:
+#            listing_text_list = self.getCSRListText()
+#            text1 = self.full_extract_add_listing(text1, listing_text_list)
+#            text2 = self.full_extract_add_listing(text2, doc_text_listing)
+        text1 = [handle_references(x) for x in text1]
+        text2 = [handle_references(x) for x in text2]
+
+        sentences1 = [split_text(x) for x in text1]
+        sentences1 = [item for sublist in sentences1 for item in sublist]
+        if len(text2) == 1 and " |||| " in text2[0]:
+            sentences2 = text2
+        else:
+            sentences2 = [split_text(x) for x in text2]
+            sentences2 = [item for sublist in sentences2 for item in sublist]
+
+        sim_list = []
+        sim_dict_2 = {}
+        sim_dict = {}
+        def get_pt_abbr(sen):
+            pt_abbr_list = []
+            pt_abbr_list.extend(self.getPotentialAbbr_arg(sen))
+            return pt_abbr_list
+
+        ## removing empty sentences
+        sentences1 = [ sent for sent in sentences1 if len(sent.strip()) > 0]
+        sentences2 = [ sent for sent in sentences2 if len(sent.strip()) > 0]
+        ## Handling a single abbr as a sentence ##
+        sentences2 = [ abbr_as_sent_replacement(sent, abbr_intext) for sent in sentences2 ]
+        ##
+        #sentences1 = [(k,nlp_model(self.cleanText(k,remNumbers=False))) for k in sentences1]
+        #sentences2 = [(k,nlp_model(self.cleanText(k,remNumbers=False))) for k in sentences2]
+
+        sentences1 = [(k,self.tf_embedder(self.cleanText(k,remNumbers=False))) for k in sentences1]
+        sentences2 = [(k,self.tf_embedder(self.cleanText(k,remNumbers=False))) for k in sentences2]
+
+        for sen1 in sentences1:
+            abbr_list_s1 = get_pt_abbr(sen1[0])
+            for sen2 in sentences2:
+                abbr_list_s2 = get_pt_abbr(sen2[0])
+#                sim = self.cosine_similarity_synopsis(sen1,sen2)
+                #sim = sen1[1].similarity(sen2[1])
+                sim = util.pytorch_cos_sim(sen1[1], sen2[1]).numpy()[0][0]
+                if len(sen1[0].split()) > 7 and len(sen2[0].split()) > 7 and sim <= 0.9:
+                    if [j.lower() for j in sen1[0].split()[:3]] == [j.lower() for j in sen2[0].split()[:3]]:
+                        sim += 0.1
+###################    Abbreviation filteration and mapping correct sentences (Additional Filter)    ##############################################                
+                if sim < 0.75:
+                    sen1List = sen1[0].split(' ')
+                    sen2List = sen2[0].split(' ')
+                    for abbr in  list(abbr_intext.keys()):
+                        
+                        if (abbr in sen1List and abbr_intext[abbr].lower() in sen2[0].lower()):
+                            sen1_Stripped = [ sent for sent in sen1List if len(sent.strip()) > 0]
+                            len_sen1_Stripped = len(sen1_Stripped)
+                            if len(sen1_Stripped) >8:
+                                sen1_Stripped = [x for x in sen1_Stripped if not x in stop_words]
+                            abbr_sen2 = sen2[0].replace(abbr_intext[abbr], abbr)
+                            abbr_sen2List = abbr_sen2.split(' ')
+                            sen2_Stripped = [ sent for sent in abbr_sen2List if len(sent.strip()) > 0]
+                            if len_sen1_Stripped >8:
+                                sen2_Stripped = [x for x in sen2_Stripped if not x in stop_words]
+                            common_csr_protocol_elem = [x for x in sen1_Stripped if x in sen2_Stripped]
+                            new_sim = len(common_csr_protocol_elem)/len(sen2_Stripped)
+                            if new_sim > sim:
+                                sim = new_sim
+                                
+                        if (abbr in sen2List and abbr_intext[abbr].lower() in sen1[0].lower()):
+                            sen1_Stripped = [ sent for sent in sen1List if len(sent.strip()) > 0]
+                            len_sen1_Stripped = len(sen1_Stripped)
+                            if len(sen1_Stripped) >8:
+                                sen1_Stripped = [x for x in sen1_Stripped if not x in stop_words]
+    #                        sen1_embedded = [(k,self.tf_embedder(self.cleanText(k,remNumbers=False))) for k in sen1_Stripped]
+                            abbr_sen2 = sen2[0].replace(abbr, abbr_intext[abbr])
+                            abbr_sen2List = abbr_sen2.split(' ')
+                            sen2_Stripped = [ sent for sent in abbr_sen2List if len(sent.strip()) > 0]
+                            if len_sen1_Stripped >8:
+                                sen2_Stripped = [x for x in sen2_Stripped if not x in stop_words]
+                            common_csr_protocol_elem = [x for x in sen1_Stripped if x in sen2_Stripped]
+                            new_sim = len(common_csr_protocol_elem)/len(sen2_Stripped)
+                            if new_sim > sim:
+                                sim = new_sim
+                        
+##########################################################################
+                if checkName == "PostText Check":
+                    if (len(sen1[0].split()) > 10 and round(sim,2) >= 0.10) or (len(sen1[0].split()) <= 10 and (round(sim,2) >= 0.10 or sen1[0] in sen2[0] or sen2[0] in sen1[0]) and not has_numbers(sen1[0])) or ((len(abbr_list_s1) >0 or len(abbr_list_s2))>0 and round(sim,2) >= 0.10) or (sum([j in sen2[0].split() for j in sen1[0].split()])/len(sen1[0].split()) >= 0.4 and sim >= 0.4):
+                        if sen1[0] in sim_dict.keys():
+                            sim_dict[sen1[0]].append([sim, str(sen2[0])])
+                        else:
+                            sim_dict[sen1[0]] = [[sim, str(sen2[0])]]
+                else:
+                    if (len(sen1[0].split()) > 10 and round(sim,2) >= 0.5) or (len(sen1[0].split()) <= 10 and (round(sim,2) >= 0.5 or sen1[0] in sen2[0] or sen2[0] in sen1[0]) and not has_numbers(sen1[0])) or ((len(abbr_list_s1) >0 or len(abbr_list_s2))>0 and round(sim,2) >= 0.5) or (sum([j in sen2[0].split() for j in sen1[0].split()])/len(sen1[0].split()) >= 0.4 and sim >= 0.4):
+                        if sen1[0] in sim_dict.keys():
+                            sim_dict[sen1[0]].append([sim, str(sen2[0])])
+                        else:
+                            sim_dict[sen1[0]] = [[sim, str(sen2[0])]]
+            try:
+                ## get all the max score sentences
+                max_score = max(sim_dict[sen1[0]])[0]
+                sentenceList = [sent_score for sent_score in sim_dict[sen1[0]] if sent_score[0] == max_score ]
+                if len(sentenceList) > 1:
+                    sent_score_list = []
+                    for sent in sentenceList:
+                        score = self.cosine_similarity_tf(sen1[0],sent[1])
+                        sent_score_list.append([score,sent[1]])
+                    sim_dict_2[sen1[0]] = max(sent_score_list)
+                else:
+                    sim_dict_2[sen1[0]] = max(sim_dict[sen1[0]])
+            except:
+                pass
+
+        sentences1 = [k[0] for k in sentences1]
+        sentences2 = [k[0] for k in sentences2]
+        #consider only most similar sentences , remove duplicates
+        list_matches = list(sim_dict_2.values())
+        sim_dict_3 = deepcopy(sim_dict_2)
+
+        for x in sim_dict_2.keys():
+            for y in list_matches:
+                if sim_dict_2[x][1] in y:
+                    if sim_dict_2[x][0] >= y[0] or sim_dict_2[x][0] >= 0.93 :
+                        pass
+                    else:
+                        ### Handled error which was caused by sentence as key not found in sim_dict list
+                        try:
+                            sim_dict[x].pop(sim_dict[x].index(sim_dict_2[x]))
+                        except:
+                            continue
+                        if len(sim_dict[x]) >0:
+                            sim_dict_3[x] = max(sim_dict[x])
+                        else:
+                            sim_dict_3.pop(x, None)
+                        break
+
+        sim_dict_2 = deepcopy(sim_dict_3)
+        for sen in sentences1:
+            if sen in sim_dict_2.keys():
+                sim_dict_3[sen] = sim_dict_2[sen]
+            else:
+                sim_dict_3[sen] = [0.0, ""]
+
+#        len(sim_dict_3.keys()) == len(sentences1)
+
+        sentences1_list = [txt for txt in sentences1]
+        index_map_sentences1 = {v: i for i, v in enumerate(sentences1_list)}
+        sim_dict_3 = {k:sim_dict_3[k] for k,_ in index_map_sentences1.items()}
+
+        for para in sim_dict_3.keys():
+            if sim_dict_3[para][0] >= 1:
+                csr_diff = []
+            else:
+                csr_diff = self.sentence_diff(self.cleanText_Content(str(para)), self.cleanText_Content(str(sim_dict_3[para][1])),abbr_intext)
+                try:
+                    catch_fails = []
+                    for _word_ in csr_diff:
+                        if len(_word_["word"]) > 10 and _word_['word'].lower() in [j[:-1] if j[-1:] == "." or j[-1] == "," else j for j in initial_text_2.lower().split()]:
+                            catch_fails.append(_word_)
+                        if len(_word_["word"]) > 3 and _word_['word'][-1:] in """!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~""" and _word_["word"][:-1].isdigit() and _word_["word"][:-1] in [j[:-1] if j[-1:] == "." or j[-1] == "," or j[-1] == ";" else j for j in initial_text_2.lower().split()]:
+                            catch_fails.append(_word_)
+                    csr_diff = [j for j in csr_diff if j not in catch_fails]
+                except Exception as e:
+                    print(e, "\n\n")
+            para_2 = str(para)
+            if para_2[-2:] == " .":
+                para_2 = para_2[:-2]
+            #if 65% words are mismatched in a sentence and similarity is  < 85% , mark it as no match
+            para_no_sw = [x for x in para.split() if x.lower() not in stop_words]
+            # if self.cleanText_Content(str(para)) == "The most common severe unsolicited AEs were suicidal ideation and appendicitis, both occurring in 2/3,082 (0.1%) subjects in the XYZ1234 arm and none in the placebo arm (Table 14.3.2.3.1)":
+            #     print(" NOT Post csr_diff", csr_diff)
+            if not checkName == "PostText Check":
+                if len([word for word in csr_diff if "table" != word['word'].lower()]) > 0.65 * len(para_no_sw) and sim_dict_3[para][0] < 0.90:
+                    sim_list.append([0, [], self.cleanText_Content(str(para_2)), ""])
+                else:
+                    sim_list.append([sim_dict_3[para][0], csr_diff, self.cleanText_Content(str(para_2)), self.cleanText_Content(str(sim_dict_3[para][1]))])
+            else:
+                sim_list.append([sim_dict_3[para][0], csr_diff, self.cleanText_Content(str(para_2)), self.cleanText_Content(str(sim_dict_3[para][1]))])
+
+        return sim_list
