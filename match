@@ -1,0 +1,282 @@
+def getSectionMatchPositions(self, csr_doc_section_match_dict, csr_sections, doc_csr_sections, mapping_type,abbr_intext, doc_mapping=None, doc_text_listing=None,doc_abbr_intext={}):
+
+        def getdocname(doc_str, doc_mapping):
+            doc_list = []
+            for doc in doc_mapping.keys():
+                if doc_str[:-2] in doc_mapping[doc]:
+                    doc_list.append(doc)
+            if len(doc_list)>0:
+                return doc_list[0]
+            else:
+                return ""
+
+        def cleandoctext(doc_str):
+            if doc_str[-2:] == "..":
+                return doc_str[:-2]+"."
+            else:
+                return doc_str
+
+        def add_delim(doc_str):
+            if ".." in doc_str:
+                return doc_str.replace("..", "~")
+            else:
+                return doc_str
+
+        def check_single_word(csr_str):
+            if csr_str == "":
+                return False
+            csr_str = csr_str.strip()
+            csr_list = csr_str.split(" ")
+            if len(csr_list)>1:
+                return False
+            else:
+                return True
+
+        def jaccard_similarity(text1, text2):
+            list1 = list(self.cleanText(text1).split())
+            list2 = list(self.cleanText(text2).split())
+            set1 = set(list1)
+            set1n = len(set1)
+            set2 = set(list2)
+            intersection = len(set1.intersection(set2))
+            if set1n == 0:
+                return 0
+            else:
+                if len(set2) == 1 and intersection == 1:
+                    return (0.8 * len(set1)) / len(set1)
+                return intersection / len(set1)
+
+        def sent_tokenizer(paragraph_str, mode):
+            # Splitting the sentences
+            real_sentences = nltk.sent_tokenize(paragraph_str)
+            
+            # Removing occurance of 2 or more spaces
+            real_sentences = [re.sub(r' {2,}', ' ', string).strip() for string in real_sentences]
+
+            try:
+                new_real_sentences = []
+                for item in real_sentences:
+                    new_real_sentences.extend(item.split("\n"))
+                real_sentences = new_real_sentences
+            except:
+                pass
+            real_sentences = [j.strip() for j in real_sentences]
+            return real_sentences
+        start_time = time.time()
+        csr_doc_section_match_pos = []
+        for sec in csr_doc_section_match_dict.keys():
+            match_score = csr_doc_section_match_dict[sec][1]
+            if len (csr_doc_section_match_dict[sec])==3:
+                cosine_score= 0.0 #assigning cosine of 0 to non matched sections in final dict
+            else:
+                cosine_score=csr_doc_section_match_dict[sec][-1]
+            doc_sec = csr_doc_section_match_dict[sec][2]
+            if match_score >= 0.3:
+                checkOneWord = False
+                if check_single_word(csr_sections[sec]) or check_single_word(doc_csr_sections[doc_sec]):
+                    checkOneWord = True
+                sec_pos_list = self.getMatchPositions(csr_sections[sec], doc_csr_sections[doc_sec],abbr_intext, doc_text_listing,doc_abbr_intext)
+                
+                #Reverse QC to highlight in protocol doc
+                reverse_qc = []
+                try:
+                    if mapping_type == "Protocol":
+                        reverse_qc = []
+                        
+                        #reverse_qc = self.getSectionMatchPositionsReverseQC(sec, doc_sec, csr_doc_section_match_dict, csr_sections, doc_csr_sections, mapping_type,abbr_intext, doc_mapping=None, doc_text_listing=None,doc_abbr_intext={})    
+                except Exception as e:
+                    print("There is error while processing reverse QC: ", str(e))
+                    pass
+                
+                ###################################################################################################
+                # FIX ONE CSR SENTENCE TO MULTIPLE DOC SENTENCES ISSUE
+                try:
+                    doc_sect_sent_list = sent_tokenizer(doc_csr_sections[doc_sec], "")
+                    for idx, item in enumerate(sec_pos_list):
+                        if item[-1] != "":
+                            sent_sim_dict = [[doc_sent,(self.cosine_similarity(item[-2], doc_sent) + jaccard_similarity(item[-2], doc_sent)) / 2] for doc_sent in doc_sect_sent_list if doc_sent[:-1] not in [j[3] for j in sec_pos_list]]
+                            sent_sim_dict = [j for j in sent_sim_dict if j[1] > 0.55]
+                            sent_sim_dict = sorted(sent_sim_dict, key = lambda x: int(doc_csr_sections[doc_sec].find(x[0])), reverse = False)
+                            sent_sim_dict = [j[0] for j in sent_sim_dict]
+                            extended_sent = " |||| ".join(sent_sim_dict)
+                            if item[3] not in extended_sent and extended_sent != "":
+                                extended_sent = item[3] + " |||| " + extended_sent
+                            if " |||| " in extended_sent:
+                                sec_pos_list_add = self.getMatchPositions(item[-2], extended_sent, abbr_intext, doc_text_listing,doc_abbr_intext)[0]
+                                sec_pos_list_add[3] = sec_pos_list_add[3].split(" |||| ")[0].replace("|||| ","")
+                                sec_pos_list = [j if j[2] != sec_pos_list_add[2] else sec_pos_list_add for j in sec_pos_list]
+                                try:
+                                    for idx, sec_item in enumerate(sec_pos_list):
+                                        catch_fails = []
+                                        for _word_ in sec_item[1]:
+                                            if len(_word_["word"]) > 10 and _word_['word'].lower() in [j[:-1] if j[-1:] == "." or j[-1] == "," else j for j in doc_csr_sections[doc_sec].lower().split()]:
+                                                catch_fails.append(_word_)
+                                        sec_pos_list[idx][1] = [j for j in sec_pos_list[idx][1] if j not in catch_fails]
+                                except Exception as e:
+                                    print(e, "\n\n")
+                        if item[-1] == "":
+                            sent_sim_dict = [[doc_sent,(self.cosine_similarity(item[-2], doc_sent) + jaccard_similarity(item[-2], doc_sent)) / 2] for doc_sent in doc_sect_sent_list]
+                            sent_sim_dict = [j for j in sent_sim_dict if (j[1] > 0.5 and len(self.cleanText(j[0]).split()) > 2) or (j[1] >= 0.4 and len(self.cleanText(j[0]).split()) <= 2)]
+                            sent_sim_dict = sorted(sent_sim_dict, key = lambda x: int(doc_csr_sections[doc_sec].find(x[0])), reverse = False)
+                            sent_sim_dict = [j[0] for j in sent_sim_dict]
+                            extended_sent = " |||| ".join(sent_sim_dict)
+                            if " |||| " in extended_sent:
+                                sec_pos_list_add = self.getMatchPositions(item[-2], extended_sent, abbr_intext, doc_text_listing,doc_abbr_intext)[0]
+                                sec_pos_list_add[3] = sec_pos_list_add[3].split(" |||| ")[0].replace("|||| ","")
+                                sec_pos_list = [j if j[2] != sec_pos_list_add[2] else sec_pos_list_add for j in sec_pos_list]
+                except:
+                    pass
+                #######################################################################################################
+                #######################################################################################################
+                # FIX Multiple CSR sentence to one doc sentence issue
+                try:
+                    doc_sent_matched = list(set([j[3] for j in sec_pos_list if j[3] != ""]))
+                    for idx, item in enumerate(sec_pos_list):
+                        if item[-1] == "" and item[2] != "":
+                            doc_sent_scores_ = [float(jaccard_similarity(item[-2], sent)) for sent in doc_sent_matched]
+                            if len(doc_sent_scores_) > 0:
+                                highest_match = np.argmax(doc_sent_scores_)
+                                highest_score = np.max(doc_sent_scores_)
+                                if float(highest_score) > 0.65:
+                                    sec_pos_list_add = self.getMatchPositions(item[-2], doc_sent_matched[highest_match], abbr_intext, doc_text_listing,doc_abbr_intext)[0]
+                                    sec_pos_list = [j if j[2] != sec_pos_list_add[2] else sec_pos_list_add for j in sec_pos_list]
+                except:
+                    pass
+                #######################################################################################################
+                sec_pos_dict = []
+                sec_pos_items_list = []
+
+                def replace_required_symbols(_str_):
+                    dict_rep = {"": "≥"}
+                    for symb, rep_symb in dict_rep.items():
+                        _str_ = _str_.replace(symb, rep_symb)
+                    return _str_
+
+                for sec_pos in sec_pos_list:
+                    if len(sec_pos[1])>0:
+#                        sec_pos_items = [{'word':str(sec_pos[2])[v[0]:v[1]], 'position':v} for k,v in sec_pos[1].items()]
+#                        sec_pos_items = [{'word':k, 'position':v} for k,v in sec_pos[1].items()]
+                        sec_pos_items = sec_pos[1]
+                        if doc_mapping is not None: #                       "csr_sentence": add_delim(sec_pos[2]), "doc_sentence": add_delim(sec_pos[3])
+                            sec_pos_dict.append(word_csr_num_protocol_fix({"positions":sec_pos_items, "csr_sentence": replace_required_symbols(sec_pos[2]), "doc_sentence": sec_pos[3], "doc_section":getdocname(sec_pos[3], doc_mapping)}, abbr_intext)) #, "doc_sentence": sec_pos[3]
+                        else:
+                            sec_pos_dict.append(word_csr_num_protocol_fix({"positions":sec_pos_items, "csr_sentence": replace_required_symbols(sec_pos[2]), "doc_sentence": sec_pos[3], "doc_section":""}, abbr_intext))
+                        sec_pos_items_list.extend(sec_pos_items)
+                    else:
+                        sec_pos_items = []
+                        if doc_mapping is not None:
+                            sec_pos_dict.append(word_csr_num_protocol_fix({"positions":sec_pos_items, "csr_sentence": replace_required_symbols(sec_pos[2]), "doc_sentence": sec_pos[3], "doc_section":getdocname(sec_pos[3], doc_mapping)}, abbr_intext)) #, "doc_sentence": sec_pos[3]
+                        else:
+                            sec_pos_dict.append(word_csr_num_protocol_fix({"positions":sec_pos_items, "csr_sentence": replace_required_symbols(sec_pos[2]), "doc_sentence": sec_pos[3], "doc_section":""}, abbr_intext))
+                        sec_pos_items_list.extend(sec_pos_items)
+
+                if checkOneWord is False:
+                    if match_score > 0.5  and cosine_score>= 0.15 and len(csr_sections[sec].strip()) == 0:
+                        status = "Match"
+                    elif match_score > 0.997 and len(sec_pos_items_list)==0: # 0.8
+                        status = "Match"
+                    elif match_score >= 0.5 and len(sec_pos_items_list)>0:
+                        if match_score < 0.7:
+                            if self.cosine_similarity(sec, csr_doc_section_match_dict[sec][2].split("+$$+")[-1]) < 0.5 and not any([j.lower() in [k.lower() for k in csr_doc_section_match_dict[sec][2].split()] for j in sec.split()]):
+                                status = "MisMatch"
+                            else:
+                                status = "Partial Match"
+                        else:
+                            status = "Partial Match"
+                    elif match_score > 0.93 and match_score < 0.997 and cosine_score>= 0.15:
+                        status = "Match"
+                    elif match_score > 0.8 and cosine_score>= 0.15 and len(sec_pos_list) == 1 and len(sec_pos_items_list) == 0:
+                        status = "Partial Match"
+#                    elif match_score >= 0.95 and len(sec_pos_items_list)==0:
+#                        status = "Partial Match"
+                    elif match_score >= 0.5 and len(sec_pos_items_list)==0:
+                        if sec.lower().strip() == csr_doc_section_match_dict[sec][2].split(" +$$+ ")[0].lower().strip() and match_score > 0.6:
+                            status = "Match"
+                        else:
+                            status = "Partial Match"
+                    else :
+                        status = "MisMatch"
+                else:
+                    if match_score >= 0.99 :
+                        status = 'Match'
+                    elif match_score >= 0.5 and match_score < 0.99:
+                        status = 'Partial Match'
+                    else:
+                        status = 'MisMatch'
+                if checkOneWord and status != 'MisMatch':
+                    positions_oneword = {
+                        "positions":[],
+                        "csr_sentence":self.cleanText_Content(csr_sections[sec]),
+                        "doc_sentence" : self.cleanText_Content(doc_csr_sections[doc_sec]),
+                        "doc_section" : ""
+                    }
+                    #csr_doc_section_match_pos.append({'mapping_type':mapping_type,'csr_heading': self.cleanText_Content1(sec), 'mapped_heading': self.cleanText_Content1(doc_sec), "match_score":match_score, "status":status, "match_positions":positions_oneword,"csrHeadingOccurence":1,"mappedHeadingOccurence" : 1 })
+                    csr_doc_section_match_pos.append(sap_json_structure(0,mapping_type,self.cleanText_Content1(sec), self.cleanText_Content1(doc_sec), match_score,status,positions_oneword,1, 1, "", None, reverse_qc))
+                elif len(sec_pos_dict)>0:
+                    #csr_doc_section_match_pos.append({'mapping_type':mapping_type,'csr_heading': self.cleanText_Content1(sec), 'mapped_heading': self.cleanText_Content1(doc_sec), "match_score":match_score, "status":status, "match_positions":sec_pos_dict,"csrHeadingOccurence":1,"mappedHeadingOccurence" : 1 })
+                    csr_doc_section_match_pos.append(sap_json_structure(0,mapping_type,self.cleanText_Content1(sec), self.cleanText_Content1(doc_sec), match_score,status,sec_pos_dict,1, 1, "", None, reverse_qc))
+                elif len(sec_pos_dict)==0 and status=='Match':
+                    #csr_doc_section_match_pos.append({'mapping_type':mapping_type,'csr_heading': self.cleanText_Content1(sec), 'mapped_heading': self.cleanText_Content1(doc_sec), "match_score":match_score, "status":status, "match_positions":[],"csrHeadingOccurence":1,"mappedHeadingOccurence" : 1 })
+                    csr_doc_section_match_pos.append(sap_json_structure(0,mapping_type,self.cleanText_Content1(sec), self.cleanText_Content1(doc_sec), match_score,status,[],1, 1, "", None, reverse_qc))
+                else:
+                    #csr_doc_section_match_pos.append({'mapping_type':mapping_type,'csr_heading': self.cleanText_Content1(sec), 'mapped_heading': self.cleanText_Content1(doc_sec), "match_score":match_score, "status":status, "match_positions":[],"csrHeadingOccurence":1,"mappedHeadingOccurence" : 1 })
+                    csr_doc_section_match_pos.append(sap_json_structure(0,mapping_type,self.cleanText_Content1(sec), self.cleanText_Content1(doc_sec), match_score,status,[],1, 1, "", None, reverse_qc))
+                    
+            elif match_score == 0.0: #mis match when target is empty
+                position_data = []
+                try:
+                    position_data = [{"positions":[], "csr_sentence": csr_sections[sec], "doc_sentence": "", "doc_section":""}]
+                except:
+                    pass
+                #csr_doc_section_match_pos.append({'mapping_type':mapping_type,'csr_heading': self.cleanText_Content1(sec), 'mapped_heading': self.cleanText_Content1(doc_sec), "match_score":match_score, "status":'MisMatch', "match_positions":[],"csrHeadingOccurence":1,"mappedHeadingOccurence" : 1 })
+                csr_doc_section_match_pos.append(sap_json_structure(0,mapping_type,self.cleanText_Content1(sec), self.cleanText_Content1(doc_sec), match_score,'MisMatch',position_data,1, 1, "", None, reverse_qc))
+            else:
+                #csr_doc_section_match_pos.append({'mapping_type':mapping_type,'csr_heading': self.cleanText_Content1(sec), 'mapped_heading': self.cleanText_Content1(doc_sec), "match_score":match_score, "status":'No Match', "match_positions":[],"csrHeadingOccurence":1,"mappedHeadingOccurence" : 1 })
+                csr_doc_section_match_pos.append(sap_json_structure(0,mapping_type,self.cleanText_Content1(sec), self.cleanText_Content1(doc_sec), match_score,'No Match',[],1, 1, "", None, reverse_qc))
+        end_time = time.time() - start_time
+        print("------------------ %s Minutes | IP 1 ---" % (end_time/60))
+
+
+        ## Checking any section with status "Partial Match" and all CSR content is matched with corresponding section
+        for idx, eachRec in enumerate(csr_doc_section_match_pos):
+            try:
+                csr_sec = eachRec['csr_heading']
+                doc_sec = eachRec['mapped_heading']
+                if len(csr_sections[csr_sec]) > 0 and len(doc_csr_sections[doc_sec])>0 and eachRec['status'] == 'Partial Match' and eachRec['match_score'] >= 0.85:
+                    csr_para = csr_sections[csr_sec]
+                    for subResult in eachRec['match_positions']:
+                        ## if any diff or words is present, then break
+                        if subResult['positions'] == []:
+                            csr_para = csr_para.replace(subResult['csr_sentence'],"")
+                        else:
+                            break
+                    csr_para = re.sub('\.|:|\s{1,}','',csr_para)
+
+                    ## if length of csr paragraph is empty, then change status to "Match"
+                    if len(csr_para.strip()) == 0:
+                        csr_doc_section_match_pos[idx]['status'] = "Match"
+            except:
+                pass
+        end_time = time.time() - start_time
+        print("------------------ %s Minutes | IP 2 ---" % (end_time/60))
+        ## Checking any section with status "Partial Match" but all doc_sent is empty, the convert to "no match"
+        for idx, eachRec in enumerate(csr_doc_section_match_pos):
+            try:
+                csr_sec = eachRec['csr_heading']
+                doc_sec = eachRec['mapped_heading']
+                if len(eachRec['match_positions']) > 0 and eachRec['status'] == 'Partial Match':
+                    bFlag = True
+                    for subResult in eachRec['match_positions']:
+                        if len(subResult['csr_sentence']) > 0 and len(subResult['doc_sentence'].strip()) > 0 :
+                            bFlag = False
+                            break
+
+                    ## if all doc_sentences are empty, then  change status to "No Match"
+                    if bFlag :
+                        csr_doc_section_match_pos[idx]['status'] = "No Match"
+            except:
+                pass
+        end_time = time.time() - start_time
+        print("------------------ %s Minutes | IP 3 ---" % (end_time/60))
+        return csr_doc_section_match_pos
+
