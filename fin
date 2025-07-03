@@ -1,0 +1,531 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Oct 16 11:31:40 2023
+
+@author: GENINVO\raju.k230
+"""
+import logging
+logging.basicConfig(filename='ContentMatchingServiceLog.log', level=logging.DEBUG,
+                    format='%(asctime)s %(levelname)s %(name)s %(message)s')
+logging.getLogger('pdfminer').setLevel(logging.WARNING)
+logger = logging.getLogger(__name__)
+from flask import request , jsonify
+from DocQCAPI import DocQCService
+import re
+from HelperFunctions import remove_tlf_headings, getTextOccurence, gettableNameSplit
+import pandas as pd
+from copy import deepcopy
+import numpy as np
+import json
+import os
+import time
+from progress_bar import log_progress
+
+# import spacy
+# nlp_model = spacy.load("en_core_web_lg")
+
+
+def get_doc_heading_order(mapped_heading, mapping_type, index_map_prot_headings, index_map_temp_headings, index_map_sap_headings):
+    index = 0
+    try:
+        if mapping_type =="SAP":
+            index = index_map_sap_headings[mapped_heading]
+        if mapping_type =="Template":
+            index = index_map_temp_headings[mapped_heading]
+        if mapping_type =="Protocol":
+            index = index_map_prot_headings[mapped_heading]
+    except:
+        pass
+    return index
+
+
+def final_result():
+
+    checkName = "SAP Final Result"
+    logger.info(checkName + " " + "Process started")
+    data = request.json
+    #tmpl_res = data['template_res']
+    #prot_res = data['protocol_res']
+    #sap_res = data['sap_res']
+    tmpl_res_path = data['template_res']
+    prot_res_path = data['protocol_res']
+    sap_res_path = data['sap_res']
+    
+    csr_path = data['csr_path']
+    sap_csr_doc = data['sap_path']
+    prot_csr_doc = data['protocol_path']
+    tmpl_csr_doc = data['template_path']
+    
+    progress_json_path = data['json_path']
+    time_zone = data["time_zone"]
+    
+    start_time = time.time()
+    
+    try:
+        if os.path.exists(progress_json_path):
+            _json_data = readJson(progress_json_path)    
+            if len(_json_data) > 0:
+                start_time = _json_data[0]["start_time"]
+    except:
+        pass    
+    #csr_sections_list = data['csr_sections_list']
+    #sec_struct_list = data['sec_struct_list']
+    logger.info(checkName + "-- input data -- " + str(data))
+    
+    doc_file_name_mapper = {"Protocol":"","SAP":"","Template":""}
+    if prot_csr_doc:
+       doc_file_name_mapper["Protocol"]  = os.path.basename(prot_csr_doc)
+
+    if tmpl_csr_doc:
+       doc_file_name_mapper["Template"]  = os.path.basename(tmpl_csr_doc)  
+       
+    if sap_csr_doc:
+       doc_file_name_mapper["SAP"]  = os.path.basename(sap_csr_doc)        
+    
+    ### reading the data from json files
+    if tmpl_res_path :
+        tmpl_res_data = readJson(tmpl_res_path)
+        tmpl_res = tmpl_res_data['doc_res']
+    else:
+        tmpl_res = []
+        
+    if sap_res_path :
+        sap_res_data = readJson(sap_res_path)
+        sap_res = sap_res_data['doc_res']
+    else:
+        sap_res = []
+        
+    prot_res_data = readJson(prot_res_path)
+    prot_res = prot_res_data['doc_res']
+    csr_sections_list = prot_res_data['csr_sections_list']
+    sec_struct_list = prot_res_data['sec_struct_list']
+
+    progress_data = {"task":"Filtering results as per hightest content match","percentage":91,"start_time":start_time,"end_time":time.time(),"time_zone":time_zone}
+    log_progress(progress_json_path,progress_data)
+     
+    ##
+    csr = DocQCService(csr_path)
+    prot_csr = DocQCService(prot_csr_doc)
+    ##
+    # csr_sections = csr.getCSRSections_alt()
+    csr_sections = csr.getCSRSections_alt_Final_res_api()
+    abbr_title_list = [title for title in list(csr_sections.keys()) if bool(re.search('abbreviation|abbrevation|acronym', title.lower()))]
+    if len(abbr_title_list):
+        abbr_title = abbr_title_list[0]
+    else:
+        abbr_title = ""
+    prot_csr_sections = prot_csr.getCSRSections_alt()
+    
+    ## Template file is optional and it can be empty
+    if len(tmpl_csr_doc) > 0:
+        tmpl_csr = DocQCService(tmpl_csr_doc)
+        tmpl_csr_sections = tmpl_csr.getCSRSections_alt()
+    else:
+        tmpl_csr_sections = []
+
+    ## SAP file is optional and it can be empty
+    if  len(sap_csr_doc) > 0:
+        sap_csr = DocQCService(sap_csr_doc)
+        sap_csr_sections = sap_csr.getCSRSections_alt()
+    else:
+        sap_csr_sections = []
+
+    if len(csr_sections)>0:
+        sanity_check_perc = sum([val=="" for val in csr_sections.values()])/len(csr_sections)
+        if sanity_check_perc > 0.5:
+            csr_sections = csr.getCSRSections()
+    else:
+        csr_sections = csr.getCSRSections()
+
+    csr_sections_clean_list = remove_tlf_headings(list(csr_sections.keys()),csr)
+    csr_sections = {k:csr_sections[k] for k in csr_sections_clean_list}
+    csr_sections = {k.strip():v for k,v in csr_sections.items()}
+
+    json_result = tmpl_res + prot_res + sap_res
+    
+    ##splitting the json result based on table results
+    json_result_table = [ eachRecord  for eachRecord in json_result if eachRecord['isTableResult'] == 1]
+    json_result = [ eachRecord  for eachRecord in json_result if eachRecord['isTableResult'] == 0]
+    
+    ## remove json records of statistical sections with Protocl mapping type for table comparison
+    
+    if len(sap_csr_doc) > 0:
+        stat_sections = getStatisticalSectionNames(csr_sections_list)
+        rmv_idx = []
+        for idx, eachJson in enumerate(json_result_table) :
+            if eachJson['csr_heading'] in stat_sections and eachJson["mapping_type"] == "Protocol" :
+                rmv_idx.append(idx)
+        json_result_table = [eachJson for idx, eachJson in enumerate(json_result_table) if idx not in rmv_idx]    
+    
+    ## remove json records of statistical sections with Protocl mapping type for text comparison
+    if len(sap_csr_doc) > 0:
+        stat_sections = getStatisticalSectionNames(csr_sections_list)
+        rmv_idx = []
+        for idx, eachJson in enumerate(json_result) :
+            if eachJson['csr_heading'] in stat_sections and eachJson["mapping_type"] == "Protocol" :
+                rmv_idx.append(idx)
+        json_result = [eachJson for idx, eachJson in enumerate(json_result) if idx not in rmv_idx]
+    
+    json_result_2 = []
+    if len(json_result)>0:        
+        res_df = pd.DataFrame(json_result)
+        res_df['multiple_mapping'] = False
+        res_df['title_match_score'] = 0
+
+        for idx in range(len(res_df)):
+            res_df.loc[idx, 'title_match_score'] = csr.cosine_similarity(res_df.loc[idx, 'csr_heading'], res_df.loc[idx, 'mapped_heading'])
+            res_df['Avg_score'] = (res_df['title_match_score']+res_df['match_score'])/2
+
+        mapped_headings = list(res_df['csr_heading'].unique())
+        json_result_2 = []
+        csr_sections = {x.strip(): v for x, v in csr_sections.items()}
+        for head in mapped_headings:
+            tmp = res_df[res_df['csr_heading']==head]
+            idx = tmp[tmp['Avg_score']==max(tmp['Avg_score'])].index[0]
+            json_result_2.append(res_df.loc[idx].to_dict())
+
+        json_result_2_df = pd.DataFrame(json_result_2)
+        json_result_2_df['mapped_heading'] = np.where((json_result_2_df['match_score']==0) & (json_result_2_df['status'] == "No Match"), "", json_result_2_df['mapped_heading'])
+
+        ## converting float values to string
+        json_result_2_df[['title_match_score','Avg_score','match_score']] = json_result_2_df[['title_match_score','Avg_score','match_score']].astype('str')
+
+        json_result_2 = json_result_2_df.to_dict(orient='records')
+
+    json_result_int = json_result_2[:]
+
+#    progress_data = {"task":"Merging results","percentage":95,"start_time":start_time,"end_time":time.time(),"time_zone":time_zone}
+#    log_progress(progress_json_path,progress_data)
+    # handle subsections
+    pop_counter = 0
+    for c,x in enumerate(json_result_int):
+#        if bool(re.findall(" [+$$+] ", x['mapped_heading'])):
+        if " +$$+ " in x['mapped_heading']:
+            mapped_variables = x['mapped_heading'].split(" +$$+ ")
+            if x["mapping_type"] == "Template":
+                target_section = tmpl_csr_sections
+            elif x["mapping_type"] == "Protocol":
+                target_section = prot_csr_sections
+            elif x["mapping_type"] == "SAP":
+                target_section = sap_csr_sections
+            sub_sections_added = 0
+            uniques = []
+            for var in mapped_variables:
+                if var in uniques:
+                    continue
+                uniques.append(var)
+                
+                try:
+                    if target_section[var] != "":
+                        new_res = deepcopy(x)
+                        new_res["mapped_heading"] = var
+                        new_res["multiple_mapping"] = True
+                        json_result_2.append(new_res)
+                        sub_sections_added =sub_sections_added + 1
+                except:
+                    pass
+            if sub_sections_added > 0:
+                json_result_2.pop(c - pop_counter)
+                pop_counter = pop_counter + 1
+
+    #sorting order
+    csr_sections_list_h = [txt.strip() for txt in csr_sections_list]
+    csr_sections_order = csr_sections_list_h
+    csr_sections_order = [csr.cleanText_Content(x) for x in csr_sections_order]
+    csr_sections_order = remove_tlf_headings(csr_sections_order,csr)
+    json_result_headings = [k['csr_heading'] for k in json_result_2]
+    no_match_list = list(set(csr_sections_order) - (set(json_result_headings)))
+    if len(no_match_list)>0:
+        for sec in no_match_list:
+                json_result_2.append({'mapping_type': '','csr_heading': sec,'mapped_heading': '','status': 'No Match','match_positions': [],'csrHeadingOccurence':getTextOccurence(sec,"_",1),'mappedHeadingOccurence' : 0, "isTableResult": 0, "tableResult": None,"fileName": ""})
+
+    json_result_2_new = []
+    for item in json_result_2:
+        tmp = item
+        if item['csr_heading'] in csr_sections_list_h:
+            if item['csr_heading'] in sec_struct_list:
+                tmp['header_type']='Main_Header'
+                json_result_2_new.append(tmp)
+            else:
+                tmp['header_type']='Sub_Header'
+                json_result_2_new.append(tmp)
+        else:
+            tmp['header_type']=''
+            json_result_2_new.append(tmp)
+
+    json_result_2 = json_result_2_new
+
+    index_map_csr_headings = {v: i for i, v in enumerate(csr_sections)}
+    
+    index_map_prot_headings = {v: i for i, v in enumerate(prot_csr_sections)}
+    index_map_temp_headings = {v: i for i, v in enumerate(tmpl_csr_sections)}
+    index_map_sap_headings = {v: i for i, v in enumerate(sap_csr_sections)}
+    
+    if "" not in index_map_csr_headings.keys():
+        index_map_csr_headings[""] = max(list(index_map_csr_headings.values())) + 1
+    
+    json_result_2 = [i for i in json_result_2 if not ((i['csr_heading']).lower().startswith('table gbgj'))]
+    json_result_2 = sorted(json_result_2, key=lambda k: index_map_csr_headings[k['csr_heading']])
+    
+    #remove "_" for multiple sections with same header and handle empty sections no match
+    for c,x in enumerate(json_result_2):
+        
+        multiple_mapping_flag = False
+        multiple_mapping_value = ""
+        json_result_2[c]["csr_heading_cloned"] = json_result_2[c]["csr_heading"]
+        
+        try:
+            json_result_2[c]["result_order"] = index_map_csr_headings[json_result_2[c]["csr_heading"]]
+        except:
+            json_result_2[c]["result_order"] = 0
+            
+        json_result_2[c]["multiple_map_order"] = 0
+        
+        protocol_match_positions = ""
+        if "protocol_match_positions" in x.keys():
+            protocol_match_positions = x["protocol_match_positions"]
+        
+        if "multiple_mapping" in x.keys():
+            multiple_mapping_value = x["multiple_mapping"] 
+            multiple_mapping_flag = True   
+            
+        if multiple_mapping_flag and c > 0 and c < len(json_result_2) - 1:
+            if json_result_2[c-1]["mapping_type"] == json_result_2[c]["mapping_type"]:
+                json_result_2[c-1]["multiple_map_order"] = get_doc_heading_order(json_result_2[c-1]["mapped_heading"],json_result_2[c]["mapping_type"],index_map_prot_headings,index_map_temp_headings,index_map_sap_headings)
+                json_result_2[c]["multiple_map_order"] = get_doc_heading_order(json_result_2[c]["mapped_heading"],json_result_2[c]["mapping_type"],index_map_prot_headings,index_map_temp_headings,index_map_sap_headings)
+            
+            
+        if bool(re.findall("(_\d{1,})$", x['csr_heading'])):
+            x['csr_heading'] = x['csr_heading'].rsplit('_', 1)[0]
+
+            json_result_2[c] = x
+        else:
+            pass
+        if bool(re.findall("(_\d{1,})$", x['mapped_heading'])):
+            x['mapped_heading'] = x['mapped_heading'].rsplit('_', 1)[0]
+
+            json_result_2[c] = x
+        try:
+            if x["status"] == "MisMatch" and len(x["match_positions"]) > 0:
+                x["status"] = "Partial Match"
+                json_result_2[c] = x
+        except:
+            pass
+        try:
+            if (csr_sections[x['csr_heading']] == "")  and float(x['match_score']) < 0.8 :
+                manual_mapping = False
+                if "manual_mapping" in x.keys():
+                    manual_mapping = x["manual_mapping"]  
+                    
+                x = {   "mapping_type" : x["mapping_type"],
+                        "csr_heading": x["csr_heading"],
+                        "mapped_heading" : x["mapped_heading"],
+                        "header_type" :x["header_type"],
+                        "match_postions": [],
+                        "status": "No Match",
+                        "csrHeadingOccurence": x["csrHeadingOccurence"] ,
+                        "mappedHeadingOccurence" :x["mappedHeadingOccurence"],
+                        "isTableResult": 0,
+                        "tableResult": None,
+                        "fileName": "",
+                        "result_order": x["result_order"],
+                        "multiple_map_order": x["multiple_map_order"],
+                        "csr_heading_cloned":x["csr_heading_cloned"],
+                        "manual_mapping": manual_mapping,
+                        "protocol_match_positions": protocol_match_positions
+                        }
+                if multiple_mapping_flag:
+                    x["multiple_mapping"] = multiple_mapping_value
+                
+
+
+                json_result_2[c] = x
+            if csr_sections[x['csr_heading']] == "" :
+                x["isEmpty"] = "True"
+                if x["status"] != "No Match" :
+                    if x["mapping_type"] == "Template":
+                        target_section = tmpl_csr_sections
+                    elif x["mapping_type"] == "Protocol":
+                        target_section = prot_csr_sections
+                    elif x["mapping_type"] == "SAP":
+                        target_section = sap_csr_sections
+                    if target_section[x["mapped_heading"]] != "":
+                        manual_mapping = False
+                        if "manual_mapping" in x.keys():
+                            manual_mapping = x["manual_mapping"]                         
+                        x = {  "mapping_type" : x["mapping_type"],
+                                "csr_heading": x["csr_heading"],
+                                "mapped_heading" :  x["mapped_heading"],
+                                "header_type" :x["header_type"],
+                                "match_postions": [],
+                                "status": "MisMatch",
+                                "isEmpty":"True",
+                                "csrHeadingOccurence": x["csrHeadingOccurence"] ,
+                                "mappedHeadingOccurence" :x["mappedHeadingOccurence"],
+                                "isTableResult": 0,
+                                "tableResult": None,
+                                "fileName": "",
+                                "result_order": x["result_order"],
+                                "multiple_map_order": x["multiple_map_order"],
+                                "csr_heading_cloned": x["csr_heading_cloned"],
+                                "manual_mapping": manual_mapping, 
+                                "protocol_match_positions":protocol_match_positions
+                                    }
+                        
+                        if multiple_mapping_flag:
+                            x["multiple_mapping"] = multiple_mapping_value
+                            
+                           
+                            
+                json_result_2[c] = x
+            else:
+                x["isEmpty"] = "False"
+                json_result_2[c] = x
+
+        except Exception as e:
+            pass
+        
+    #Manager chronlogical order based on multiple mapping for same document    
+    json_result_2 = sorted(json_result_2, key=lambda x:  (x['result_order'], x['multiple_map_order']))
+    
+    ##adding "csr_heading_cloned" key in table result
+    for c, v in enumerate(json_result_table):
+        json_result_table[c]["csr_heading_cloned"] = json_result_table[c]["csr_heading"]
+    
+    ## Adding table json to final json
+    json_result_2 = json_result_2 + json_result_table
+    try:
+        json_result_2 = sorted(json_result_2, key=lambda k: index_map_csr_headings[k['csr_heading_cloned']])
+    except Exception as e:
+        pass
+
+    ## Cleaning the headings and updating the section Occurence count
+    for eachResult in json_result_2:
+        try:
+            eachResult['csr_heading'] = gettableNameSplit(eachResult['csr_heading'],"_")
+            eachResult['mapped_heading'] = gettableNameSplit(eachResult['mapped_heading'],"_")
+        except:
+            pass
+
+    ## Checking any section with status "Partial Match" but all doc_sent is empty, the convert to "no match"
+    for idx, eachRecord in enumerate(json_result_2):
+        try:
+            if len(eachRecord['match_positions']) > 0 and eachRecord['status'] == 'Partial Match':
+                bFlag = True
+                for subResult in eachRecord['match_positions']:
+                    if len(subResult['csr_sentence']) > 0 and len(subResult['doc_sentence'].strip()) > 0 :
+                        bFlag = False
+                        break
+                ## if all doc_sentences are empty, then  change status to "No Match"
+                if bFlag :
+                    eachRecord['status'] = "No Match"
+        except:
+            pass
+
+    ### Updated status to "Match", if all the sentences are not having any difference of words
+    for idx, eachRecord in enumerate(json_result_2):
+        
+        try:
+            if eachRecord["status"] not in  ["No Match","MisMatch"]:
+                eachRecord["fileName"] = doc_file_name_mapper[eachRecord["mapping_type"]]
+        except:
+            pass
+        
+        try:
+            if len(eachRecord['match_positions']) > 0 and eachRecord['status'] == 'Partial Match':
+                bFlag = True
+                for subResult in eachRecord['match_positions']:
+                    if len(subResult['csr_sentence']) == 0 or len(subResult['doc_sentence'].strip()) ==0 or len(subResult['positions']) > 0 :
+                        bFlag = False
+                        break
+                ## if there are no difference of words, then  change status to "Match"
+                if bFlag :
+                    eachRecord['status'] = "Match"
+        except:
+            pass
+        
+        #Change status of manual mapping result to "Partial Match" so that different can be highlighted anyhow
+        try:
+            if "manual_mapping" in eachRecord.keys() and eachRecord["manual_mapping"]:
+                eachRecord["status"] = "Partial Match"
+        except Exception as e:
+            print("EER", str(e))
+            pass
+    
+
+    final_result = {"startingHeader": abbr_title,
+                    "data": json_result_2,
+                    "status": 200,
+                    "message" : "success"
+                        }
+    
+    outputFilePath = createSAPOutputfile(csr_path,final_result)
+    
+    progress_data = {"task":"Preparing results","percentage":97,"start_time":start_time,"end_time":time.time(),"time_zone":time_zone}
+    log_progress(progress_json_path,progress_data)
+    
+    logger.info(checkName + " " + "Process completed")
+#    logger.info(checkName + " " + str(final_result))
+    return final_result
+
+
+def readJson(filePath):
+    data = {}
+    try:
+        file = open(filePath,'r')
+        data = json.load(file)
+        file.close()
+    except:
+        pass
+    
+    return data
+        
+def getStatisticalSectionNames(csr_sections_list ):
+    
+    startIdx, endIdx = 0,0
+    for idx, secName in enumerate(csr_sections_list):
+        secName = secName.lower()
+        ##checking statistical section start Index
+        if startIdx == 0 and ("statistical" in secName or "statistic" in secName) :
+            if "protocol" in secName:
+                break
+            startIdx = idx
+            continue
+        ## checking next main sub section after statistical section
+        if startIdx > 0  and "changes" in secName and ("conduct of the study" in secName or "planned analyses" in secName):
+            endIdx = idx
+            break
+    if startIdx > 0 and endIdx > 0:
+        return csr_sections_list[startIdx:endIdx]
+    return []
+    
+        
+
+## save th output into json file
+def createSAPOutputfile(filePath,outputJson):
+    
+    fullPath = ""
+    
+    try:
+    
+        basePath = os.path.dirname(filePath)
+        
+        ##create Python output
+        outputFolderPath = os.path.join(basePath,"python_outputs")
+        if not os.path.exists(outputFolderPath):
+            os.mkdir(outputFolderPath)
+        
+        ## create file name
+#        tempFileName = doc_type + "_" + re.sub(r'[\-\s:\.]','',str(datetime.now().replace(microsecond=0))) +".json"
+        tempFileName = "final.json"
+     
+        fullPath = os.path.join(outputFolderPath,tempFileName)
+        
+        saveFile = open(fullPath,"w")
+        json.dump(outputJson,saveFile,indent = 6)
+        saveFile.close()
+    except:
+        pass
+    
+    return fullPath
