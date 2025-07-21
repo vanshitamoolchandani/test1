@@ -1,48 +1,75 @@
-import re
-from docx import Document
 
-def extract_participant_count(file_path):
-    """
-    Extracts the number of participants from a Word document by looking for a heading
-    containing "Sample Size" and then searching for a number immediately followed by
-    the word "Participants" (case-insensitive).
-    """
+def participant_count_extractor(file_path):
+    sample_size_heading_pattern = re.compile(r"^\s*(\d+(\.\d+)*)?\s*NUMBER\s*OF\s*PARTICIPANTS\s*$", re.IGNORECASE)
     doc = Document(file_path)
-    
-    # Pattern to match the "Sample Size" heading
-    sample_size_heading_pattern = re.compile(r"^\s*(\d+(\.\d+)*)?\s*Sample\s+Size\s*$", re.IGNORECASE)
-    ^\s*\d+(\.\d+)*\s*[-:]?\s*\bSample Size\b.*$
-
-    # Pattern to match a number immediately followed by "Participants" (case-insensitive)
-    participants_pattern = re.compile(r"(\d+)\s+Participants\b", re.IGNORECASE)
 
     found_sample_size = False
-    participant_count = None
+    section_text = []
 
     for para in doc.paragraphs:
         text = para.text.strip()
-
-        # Check if this line is a valid 'Sample Size' heading
+        print(f"checking: {text[:80]}")
         if sample_size_heading_pattern.match(text):
-            print(f"Found 'Sample Size' heading: '{text}'")
             found_sample_size = True
-            continue  # Skip the heading itself
-        
-        # If we're in the Sample Size section, look for the pattern "number Participants"
+            print(f"heading --- {text}")
+            continue
+
         if found_sample_size:
-            # Search for the pattern "number Participants"
-            match = participants_pattern.search(text)
-            if match:
-                participant_count = int(match.group(1))  # Extract the number
-                print(f"Found participant count: {participant_count}")
-                break  # Stop after finding the first valid number
+            if para.style.name.startswith("Heading"):
+                break
+            section_text.append(text)
 
-    if participant_count is not None:
-        return participant_count
-    else:
-        return "No participant count found."
+    if not section_text:
+        return [{"text": "No NUMBER OF PARTICIPANTS section found", "value": None, "score": 0}]
 
-# Example usage
-file_path = "clinical_trial.docx"
-count = extract_participant_count(file_path)
-print(f"Number of participants: {count}")
+    combined_text = ".\n".join(section_text)
+
+    combined_text = re.sub(r"([A-Za-z])(\d)", r"\1 \2", combined_text)
+    return extracted_participant_counts_from_text(combined_text)
+
+def extracted_participant_counts_from_text(text):
+    results = []
+    nlp = spacy.load("en_core_web_sm")
+    doc = nlp(text)
+
+    for sent in doc.sents:
+        sent_text = sent.text.strip()
+        sent_lower = sent.text.lower()
+        if "participants" not in sent_lower:
+            continue
+        
+        cardinals = [ent for ent in sent.ents if ent.label_ == "CARDINAL"]
+        if not cardinals:
+            continue
+        for ent in cardinals:
+
+            try:
+                num = float(ent.text.replace(",", ""))
+                print(f"num: {num}")
+                if num < 1 or num >100000:
+                    continue
+
+                is_related = False
+                for token in sent:
+                    if token.text.lower().startswith("participant"):
+                        for child in token.subtree:
+                            if child.text == ent.text:
+                                is_related = True
+                                break
+
+                score = 1.0 if is_related else 0.6
+                if len(cardinals) > 1:
+                    score -= 0.2
+
+                score = max(min(score, 1.0), 0.0)
+                results.append({
+                    "text": sent_text,
+                    "value": int(num),
+                    "score": round(score, 2)
+                })
+            
+            except ValueError:
+                continue
+
+    return results
+
