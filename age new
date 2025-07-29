@@ -1,0 +1,72 @@
+nltk.download('punkt')
+
+def extract_age_criteria(file_path):
+    doc = Document(file_path)
+    inclusion_heading = "Inclusion Criteria"
+    exclusion_heading = "Exclusion Criteria"
+    inclusion_text = ""
+    found_section = False
+
+    # Step 1: Extract Inclusion Criteria section
+    for para in doc.paragraphs:
+        text = para.text.strip()
+
+        if text.lower().startswith(inclusion_heading.lower()):
+            found_section = True
+            continue
+        if found_section and text.lower().startswith(exclusion_heading.lower()):
+            break
+        if found_section:
+            inclusion_text += text + "\n"
+
+    if not inclusion_text.strip():
+        return {"full_criteria_sentence": None, "min_age": None, "max_age": None}
+
+    # Step 2: Split into sentences
+    sentences = sent_tokenize(inclusion_text)
+
+    # Step 3: Define patterns and search for age mentions
+    age_patterns = [
+        (r"(\d+)\s*to\s*<\s*(\d+)\s*years?", "lt_range"),
+        (r"(\d+)\s*to\s*(\d+)\s*years?", "range"),
+        (r"(\d+)\s*-\s*(\d+)\s*years?", "range"),
+        (r"≥\s*(\d+)\s*years?", "min"),
+        (r"at least (\d+)\s*years?", "min"),
+        (r"greater than or equal to (\d+)", "min"),
+        (r">\s*(\d+)\s*years?", "min_exclusive"),
+        (r"no older than (\d+)\s*years?", "max"),
+        (r"less than (\d+)", "max_exclusive"),
+        (r"under (\d+)\s*years?", "max_exclusive"),
+        (r"≤\s*(\d+)\s*years?", "max"),
+        (r"(\d+)\s*years?\s*and\s*older", "min"),
+    ]
+
+    # Step 4: Loop through each sentence and try to extract age constraints
+    for sentence in sentences:
+        min_age, max_age = None, None
+        for pattern, kind in age_patterns:
+            match = re.search(pattern, sentence, re.IGNORECASE)
+            if match:
+                nums = list(map(int, match.groups()))
+                if kind == "range":
+                    min_age, max_age = nums
+                elif kind == "lt_range":
+                    min_age = nums[0]
+                    max_age = nums[1] - 1
+                elif kind == "min":
+                    min_age = nums[0]
+                elif kind == "min_exclusive":
+                    min_age = nums[0] + 1
+                elif kind == "max":
+                    max_age = nums[0]
+                elif kind == "max_exclusive":
+                    max_age = nums[0] - 1
+
+                return {
+                    "full_criteria_sentence": sentence,
+                    "min_age": min_age,
+                    "max_age": max_age
+                }
+
+    # If nothing matched
+    return {"full_criteria_sentence": None, "min_age": None, "max_age": None}
