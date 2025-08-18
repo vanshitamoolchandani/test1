@@ -1,0 +1,66 @@
+#Utility function 1: to iterate through the document and retrieve table/paragraph blocks
+def iter_block_items(parent):
+    """
+    Generate a reference to each paragraph and table child within *parent*,
+    in document order. Each returned value is an instance of either Table or
+    Paragraph. *parent* would most commonly be a reference to a main
+    Document object, but also works for a _Cell object, which itself can
+    contain paragraphs and tables.
+    """
+    if isinstance(parent, _Document):
+        parent_elm = parent.element.body
+    elif isinstance(parent, _Cell):
+        parent_elm = parent._tc
+    else:
+        raise ValueError("ERROR")
+
+    for child in parent_elm.iterchildren():
+        if isinstance(child, CT_P):
+            yield _Paragraph(child, parent)
+        elif isinstance(child, CT_Tbl):
+            yield _Table(child, parent)
+
+#Utility function 2: to convert docx table to pandas dataframe
+def docx_table(block):
+    table=block
+    data = [[cell.text for cell in row.cells] for row in table.rows]
+    df = pd.DataFrame(data)
+    col_count = len(df.columns)
+    header_row = ["COL"+str(i+1) for i in range(col_count)]
+    df = pd.DataFrame(data, columns = header_row)
+    return df
+
+# Function to fetch all contents of the section with the given section header text from the docx file in the
+# given document path
+def get_soa_section_content(section_header, next_section_header, file_path):
+    document = Document(file_path)
+    flg_match_found = 0
+    p = 0
+    t = 0 
+    section_contents_dict = {}
+
+    for block in iter_block_items(document):
+        # First, identify the given section
+        if isinstance(block, _Paragraph):
+            if (block.text.lower() == section_header.lower()):
+                # If match found, set the flag as 1 and set the Header key,value of the output dict
+                flg_match_found = 1
+                section_contents_dict["Header"] =  block.text
+                continue
+
+        #If match is found, proceed to populate the output dict with the paragraph and table items in the section
+        # till the next section start
+        if flg_match_found == 1:
+            if isinstance(block, _Paragraph):
+                if (block.text.lower() == next_section_header.lower()):
+                    break
+                else:
+                    p = p + 1
+                    section_contents_dict["Para-" + str(p)] = block.text
+            elif isinstance(block, _Table):
+                t = t + 1
+                section_contents_dict["Table-" + str(t)] = docx_table(block)
+
+        else:
+            continue
+    return section_contents_dict
