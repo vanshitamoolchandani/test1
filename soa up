@@ -1,0 +1,69 @@
+import re
+import pandas as pd
+from docx import Document
+from docx.table import _Cell, Table as _Table
+from docx.text.paragraph import Paragraph as _Paragraph
+from docx.document import Document as _Document
+from docx.oxml.table import CT_Tbl
+from docx.oxml.text.paragraph import CT_P
+
+# Utility 1: iterate through blocks
+def iter_block_items(parent):
+    if isinstance(parent, _Document):
+        parent_elm = parent.element.body
+    elif isinstance(parent, _Cell):
+        parent_elm = parent._tc
+    else:
+        raise ValueError("ERROR")
+
+    for child in parent_elm.iterchildren():
+        if isinstance(child, CT_P):
+            yield _Paragraph(child, parent)
+        elif isinstance(child, CT_Tbl):
+            yield _Table(child, parent)
+
+# Utility 2: convert docx table to pandas DataFrame
+def docx_table(block):
+    data = [[cell.text.strip() for cell in row.cells] for row in block.rows]
+    col_count = len(data[0]) if data else 0
+    header_row = ["COL" + str(i+1) for i in range(col_count)]
+    return pd.DataFrame(data, columns=header_row)
+
+# Updated function
+def get_soa_section_content(file_path):
+    document = Document(file_path)
+    flg_match_found = False
+    p, t = 0, 0
+    section_contents_dict = {}
+
+    # regex patterns for soa section header and introduction
+    soa_pattern = re.compile(
+        r"(soa|schedule\s+of\s+activit(?:y|ies)(\s*\(soa\))?)",
+        re.IGNORECASE
+    )
+    intro_pattern = re.compile(r"(introduction)", re.IGNORECASE)
+
+    for block in iter_block_items(document):
+        if isinstance(block, _Paragraph):
+            text = block.text.strip()
+
+            # Detect start of SoA section
+            if not flg_match_found and soa_pattern.search(text):
+                flg_match_found = True
+                section_contents_dict["Header"] = text
+                continue
+
+            # If in section, check for INTRODUCTION as end marker
+            if flg_match_found:
+                if intro_pattern.search(text):
+                    break
+                else:
+                    if text:  # avoid empty paragraphs
+                        p += 1
+                        section_contents_dict[f"Para-{p}"] = text
+
+        elif isinstance(block, _Table) and flg_match_found:
+            t += 1
+            section_contents_dict[f"Table-{t}"] = docx_table(block)
+
+    return section_contents_dict
