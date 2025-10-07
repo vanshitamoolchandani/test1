@@ -1,0 +1,42 @@
+public static void convertToDocx(File inputPdf, File outputDocx) {
+        // You may want to throw checked exceptions rather than catching all; adapt as you prefer.
+        try {
+            // 1️⃣ Create credentials object from your JSON (or environment variables)
+            Credentials credentials = ServicePrincipalCredentials.fromFile("pdfservices-api-credentials.json");
+
+            // 2️⃣ Create the PDFServices client
+            PDFServices pdfServices = new PDFServices(credentials);
+
+            // 3️⃣ Upload the input PDF as an asset
+            FileInputStream fis = new FileInputStream(inputPdf);
+            Asset pdfAsset = pdfServices.upload(fis, pdfServices.getOperations().getMediaType().PDF.getMediaType());
+            fis.close();
+
+            // 4️⃣ Build export parameters (DOCX)
+            ExportPDFParams params = ExportPDFParams.exportPDFParamsBuilder(
+                    ExportPDFTargetFormat.DOCX)
+                    .build();
+
+            // 5️⃣ Create and submit the job
+            ExportPDFJob job = new ExportPDFJob(pdfAsset, params);
+            String location = pdfServices.submit(job);
+
+            // 6️⃣ Poll / get the job result
+            PDFServicesResponse<ExportPDFResult> response =
+                    pdfServices.getJobResult(location, ExportPDFResult.class);
+
+            // 7️⃣ Get the result asset and content stream
+            Asset resultAsset = response.getResult().getAsset();
+            StreamAsset resultStreamAsset = pdfServices.getContent(resultAsset);
+
+            // 8️⃣ Save to outputDocx
+            Files.createDirectories(Paths.get(outputDocx.getParent()));
+            try (OutputStream os = Files.newOutputStream(outputDocx.toPath())) {
+                resultStreamAsset.getInputStream().transferTo(os);
+            }
+
+        } catch (ServiceApiException | ServiceUsageException | SDKException | IOException ex) {
+            ex.printStackTrace();
+            throw new RuntimeException("PDF → DOCX conversion failed (SDK 4.x)", ex);
+        }
+    }
