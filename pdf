@@ -1,42 +1,44 @@
-public static void convertToDocx(File inputPdf, File outputDocx) {
-        // You may want to throw checked exceptions rather than catching all; adapt as you prefer.
+package com.example.pdfconverter.util;
+
+import com.adobe.pdfservices.operation.ExecutionContext;
+import com.adobe.pdfservices.operation.auth.Credentials;
+import com.adobe.pdfservices.operation.io.FileRef;
+import com.adobe.pdfservices.operation.pdfops.ExportPDFOperation;
+import com.adobe.pdfservices.operation.pdfops.ExportPDFTargetFormat;
+
+import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
+
+public class AdobePdfConverter {
+
+    public static ByteArrayOutputStream convertToDocx(InputStream pdfInputStream) {
         try {
-            // 1️⃣ Create credentials object from your JSON (or environment variables)
-            Credentials credentials = ServicePrincipalCredentials.fromFile("pdfservices-api-credentials.json");
-
-            // 2️⃣ Create the PDFServices client
-            PDFServices pdfServices = new PDFServices(credentials);
-
-            // 3️⃣ Upload the input PDF as an asset
-            FileInputStream fis = new FileInputStream(inputPdf);
-            Asset pdfAsset = pdfServices.upload(fis, pdfServices.getOperations().getMediaType().PDF.getMediaType());
-            fis.close();
-
-            // 4️⃣ Build export parameters (DOCX)
-            ExportPDFParams params = ExportPDFParams.exportPDFParamsBuilder(
-                    ExportPDFTargetFormat.DOCX)
+            // 1️⃣ Load credentials
+            Credentials credentials = Credentials.serviceAccountCredentialsBuilder()
+                    .fromFile("pdfservices-api-credentials.json")
                     .build();
 
-            // 5️⃣ Create and submit the job
-            ExportPDFJob job = new ExportPDFJob(pdfAsset, params);
-            String location = pdfServices.submit(job);
+            // 2️⃣ Create execution context
+            ExecutionContext context = ExecutionContext.create(credentials);
 
-            // 6️⃣ Poll / get the job result
-            PDFServicesResponse<ExportPDFResult> response =
-                    pdfServices.getJobResult(location, ExportPDFResult.class);
+            // 3️⃣ Create export operation for DOCX
+            ExportPDFOperation operation = ExportPDFOperation.createNew(ExportPDFTargetFormat.DOCX);
 
-            // 7️⃣ Get the result asset and content stream
-            Asset resultAsset = response.getResult().getAsset();
-            StreamAsset resultStreamAsset = pdfServices.getContent(resultAsset);
+            // 4️⃣ Set input from InputStream (modern SDK way)
+            FileRef source = FileRef.createFromStream(pdfInputStream, ExportPDFTargetFormat.PDF.name());
+            operation.setInput(source);
 
-            // 8️⃣ Save to outputDocx
-            Files.createDirectories(Paths.get(outputDocx.getParent()));
-            try (OutputStream os = Files.newOutputStream(outputDocx.toPath())) {
-                resultStreamAsset.getInputStream().transferTo(os);
-            }
+            // 5️⃣ Execute the operation
+            FileRef result = operation.execute(context);
 
-        } catch (ServiceApiException | ServiceUsageException | SDKException | IOException ex) {
-            ex.printStackTrace();
-            throw new RuntimeException("PDF → DOCX conversion failed (SDK 4.x)", ex);
+            // 6️⃣ Get output as a stream (no file saving needed)
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            result.saveAs(outputStream);
+
+            return outputStream;
+
+        } catch (Exception e) {
+            throw new RuntimeException("Adobe PDF conversion failed", e);
         }
     }
+}
