@@ -1,44 +1,105 @@
 package com.example.pdfconverter.util;
 
-import com.adobe.pdfservices.operation.ExecutionContext;
+import com.adobe.pdfservices.operation.PDFServices;
+import com.adobe.pdfservices.operation.PDFServicesMediaType;
+import com.adobe.pdfservices.operation.PDFServicesResponse;
 import com.adobe.pdfservices.operation.auth.Credentials;
-import com.adobe.pdfservices.operation.io.FileRef;
-import com.adobe.pdfservices.operation.pdfops.ExportPDFOperation;
-import com.adobe.pdfservices.operation.pdfops.ExportPDFTargetFormat;
+import com.adobe.pdfservices.operation.auth.ServicePrincipalCredentials;
+import com.adobe.pdfservices.operation.exception.SDKException;
+import com.adobe.pdfservices.operation.exception.ServiceApiException;
+import com.adobe.pdfservices.operation.exception.ServiceUsageException;
+import com.adobe.pdfservices.operation.io.Asset;
+import com.adobe.pdfservices.operation.io.StreamAsset;
+import com.adobe.pdfservices.operation.pdfjobs.jobs.ExportPDFJob;
+import com.adobe.pdfservices.operation.pdfjobs.params.exportpdf.ExportPDFParams;
+import com.adobe.pdfservices.operation.pdfjobs.params.exportpdf.ExportPDFTargetFormat;
+import com.adobe.pdfservices.operation.pdfjobs.result.ExportPDFResult;
+import org.apache.commons.io.IOUtils;
 
-import java.io.InputStream;
-import java.io.ByteArrayOutputStream;
+import java.io.*;
 
-public class AdobePdfConverter {
+public class AdobePdfUtil {
 
-    public static ByteArrayOutputStream convertToDocx(InputStream pdfInputStream) {
+    public static byte[] convertPdfToDocx(InputStream inputStream) {
         try {
-            // 1️⃣ Load credentials
-            Credentials credentials = Credentials.serviceAccountCredentialsBuilder()
-                    .fromFile("pdfservices-api-credentials.json")
+            // Load credentials (service account)
+            Credentials credentials = new ServicePrincipalCredentials("src/main/resources/pdfservices-api-credentials.json");
+            PDFServices pdfServices = new PDFServices(credentials);
+
+            // Create Asset from input stream
+            Asset inputAsset = pdfServices.upload(new StreamAsset(inputStream, PDFServicesMediaType.APPLICATION_PDF));
+
+            // Set conversion parameters
+            ExportPDFParams exportParams = ExportPDFParams.exportPDFParamsBuilder()
+                    .withTargetFormat(ExportPDFTargetFormat.DOCX)
                     .build();
 
-            // 2️⃣ Create execution context
-            ExecutionContext context = ExecutionContext.create(credentials);
+            // Create and execute job
+            ExportPDFJob job = new ExportPDFJob(inputAsset, exportParams);
+            PDFServicesResponse<ExportPDFResult> response = pdfServices.submit(job).getFinalResult();
 
-            // 3️⃣ Create export operation for DOCX
-            ExportPDFOperation operation = ExportPDFOperation.createNew(ExportPDFTargetFormat.DOCX);
+            // Get the converted file
+            Asset resultAsset = response.getResult().getAsset();
+            InputStream resultStream = pdfServices.getContent(resultAsset).getInputStream();
 
-            // 4️⃣ Set input from InputStream (modern SDK way)
-            FileRef source = FileRef.createFromStream(pdfInputStream, ExportPDFTargetFormat.PDF.name());
-            operation.setInput(source);
+            // Convert stream to byte array
+            return IOUtils.toByteArray(resultStream);
 
-            // 5️⃣ Execute the operation
-            FileRef result = operation.execute(context);
-
-            // 6️⃣ Get output as a stream (no file saving needed)
-            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-            result.saveAs(outputStream);
-
-            return outputStream;
-
-        } catch (Exception e) {
-            throw new RuntimeException("Adobe PDF conversion failed", e);
+        } catch (IOException | ServiceApiException | ServiceUsageException | SDKException e) {
+            throw new RuntimeException("PDF to DOCX conversion failed", e);
         }
+    }
+}
+
+
+package com.example.pdfconverter.service;
+
+import com.example.pdfconverter.util.AdobePdfUtil;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+
+@Service
+public class PdfService {
+
+    public byte[] convertPdfToDocx(MultipartFile file) {
+        try {
+            return AdobePdfUtil.convertPdfToDocx(file.getInputStream());
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read input file", e);
+        }
+    }
+}
+
+
+
+
+package com.example.pdfconverter.controller;
+
+import com.example.pdfconverter.service.PdfService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.*;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+@RestController
+@RequestMapping("/api")
+public class PdfController {
+
+    @Autowired
+    private PdfService pdfService;
+
+    @PostMapping(value = "/convert", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<byte[]> convertPdfToDocx(@RequestParam("file") MultipartFile file) {
+        byte[] convertedFile = pdfService.convertPdfToDocx(file);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+        headers.setContentDisposition(ContentDisposition.attachment()
+                .filename("converted.docx")
+                .build());
+
+        return new ResponseEntity<>(convertedFile, headers, HttpStatus.OK);
     }
 }
