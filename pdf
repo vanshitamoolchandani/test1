@@ -95,3 +95,315 @@ public ResponseEntity<byte[]> convertPdfToDocx(@RequestParam("file") MultipartFi
             .build());
 
     return new ResponseEntity<>(convertedFile, headers, HttpStatus.OK);
+
+import json
+import hug
+import os
+import pandas as pd
+from utils.text_processing import read_word_file
+from utils.check import validate_and_update_entities
+from utils.extract_data import (
+    mh_cm_ae_extractor, exclusion_count_extractor, inclusion_count_extractor, title_extractor, amendment_date_extractor, age_extractor, weight_extractor, participant_count_extractor, ratio_extractor, image_text_extractor, therapeutic_area_extractor, arm_cohort_table_extractor, inclusion_count_extractor, get_soa_section_content)
+
+
+
+
+file_path = "/commonshare/Datalution_ProtocolScrapper/Vanshita_workspace/Protocol-Scrapper/data/67953964MDD1006---Protocol.docx"
+
+
+
+
+if not os.path.exists(file_path):
+    print(f"Errror finding the path, {e}")
+
+
+extracted_data = {
+            "Title of Protocol": title_extractor(file_path),
+            "Amendment Date": amendment_date_extractor(file_path),
+            "Age": age_extractor(file_path),
+            "Weight": weight_extractor(file_path),
+            "extract participant count": participant_count_extractor(file_path), 
+            "Ratios": ratio_extractor(file_path),
+            "Schema": image_text_extractor(file_path), 
+            "Therapeutic Area": therapeutic_area_extractor(title_extractor(file_path)),
+            "ArmCohortTableExtractor": arm_cohort_table_extractor(file_path), 
+            "Inclusion Criteria": inclusion_count_extractor(file_path),
+            "Exclusion Criteria": exclusion_count_extractor(file_path),
+            "mh_cm_ae_extractor": mh_cm_ae_extractor(file_path),
+            "SoA": get_soa_section_content(file_path)
+        }
+
+def convert_sets(obj):
+    if isinstance(obj, set):
+        return list(obj)
+    elif isinstance(obj, pd.DataFrame):
+        return obj.to_dict(orient = "records")
+    elif isinstance(obj, dict):
+        return {k: convert_sets(v) for k, v in obj.items()}
+    elif isinstance(set, list):
+        return [convert_sets(i) for i in obj]
+    return obj
+
+
+extracted_data_cleaned = convert_sets(extracted_data)
+
+file_name = os.path.splitext(os.path.basename(file_path))[0]
+
+# print("Debugging extrcted data type")
+
+# for key, value in extracted_data_cleaned.items():
+#     print(f"{key}: {type(value)}")
+
+
+output_dir = "output"
+os.makedirs(output_dir, exist_ok = True)
+
+output_file =os.path.join(output_dir, f"{file_name}_extracted_data.json") 
+with open(output_file, "w") as f:
+    json.dump(extracted_data_cleaned, f, indent=4)
+
+
+
+
+# Call the validator
+# validate_and_update_entities(
+#     mh_file=os.path.join(output_dir, "../generic_AE_CM_MH/MH_output.json"),
+#     cm_file=os.path.join(output_dir, "../generic_AE_CM_MH/CM_output.json"),
+#     ae_file=os.path.join(output_dir, "../generic_AE_CM_MH/AE_output.json"),
+#     mapping_file=os.path.join(output_dir, "extracted_data.json")
+# )
+
+
+print("complete")
+
+
+
+
+
+import asyncio
+import os
+from fastapi import FastAPI, HTTPException, status
+from pydantic import BaseModel
+
+# Import your extractor functions
+from utils.extract_data import (
+    get_soa_section_content, mh_cm_ae_extractor, exclusion_count_extractor, inclusion_count_extractor, title_extractor, amendment_date_extractor, age_extractor, weight_extractor, participant_count_extractor, ratio_extractor, image_text_extractor, therapeutic_area_extractor, arm_cohort_table_extractor, inclusion_count_extractor)
+
+
+app = FastAPI(
+    title="Protocol Document Extractor API",
+    version="1.1.0"
+)
+
+class FilePathRequest(BaseModel):
+    file_path: str
+
+
+class SectionRequest(BaseModel):
+    section_header: str
+    next_section_header: str
+    file_path: str
+
+async def validate_file_path(path: str):
+    if not os.path.isfile(path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"File not found: {path}"
+        )
+    if not path.lower().endswith(".docx"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid file type (expected .docx): {path}"
+        )
+
+@app.get("/", response_model=dict)
+async def root_check():
+    return {"status": "API is running"}
+
+@app.post("/extract/title", response_model=dict)
+async def extract_title(request: FilePathRequest):
+    await validate_file_path(request.file_path)
+    try:
+        title = await asyncio.to_thread(title_extractor, request.file_path)
+        return {"title": title}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error extracting title: {e}"
+        )
+
+@app.post("/extract/amendment", response_model=dict)
+async def extract_amendment(request: FilePathRequest):
+    await validate_file_path(request.file_path)
+    try:
+        amendment = await asyncio.to_thread(amendment_date_extractor, request.file_path)
+        return {"amendment": amendment}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error extracting amendment date: {e}"
+        )
+
+@app.post("/extract/age", response_model=dict)
+async def extract_age(request: FilePathRequest):
+    await validate_file_path(request.file_path)
+    try:
+        ages = await asyncio.to_thread(age_extractor, request.file_path)
+        return {"age": ages}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error extracting age: {e}"
+        )
+
+@app.post("/extract/weight", response_model=dict)
+async def extract_weight(request: FilePathRequest):
+    await validate_file_path(request.file_path)
+    try:
+        weight_info = await asyncio.to_thread(weight_extractor, request.file_path)
+        return {"weight_criteria": weight_info}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error extracting weight criteria: {e}"
+        )
+
+@app.post("/extract/participants", response_model=dict)
+async def extract_participants(request: FilePathRequest):
+    await validate_file_path(request.file_path)
+    try:
+        participants = await asyncio.to_thread(participant_count_extractor, request.file_path)
+        return {"participants": participants}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error extracting participants: {e}"
+        )
+
+@app.post("/extract/ratio", response_model=dict)
+async def extract_ratio(request: FilePathRequest):
+    await validate_file_path(request.file_path)
+    try:
+        ratios = await asyncio.to_thread(ratio_extractor, request.file_path)
+        return {"ratios": ratios}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error extracting ratio: {e}"
+        )
+
+@app.post("/extract/therapeutic-area", response_model=dict)
+async def extract_therapeutic_area(request: FilePathRequest):
+    try:
+        title = await asyncio.to_thread(title_extractor, request.file_path)
+        result = await asyncio.to_thread(therapeutic_area_extractor, title)
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error extracting therapeutic area: {e}"
+        )
+
+@app.post("/extract/image-text", response_model=dict)
+async def extract_image_text(request: FilePathRequest):
+    await validate_file_path(request.file_path)
+    try:
+        folder = await asyncio.to_thread(image_text_extractor, request.file_path)
+        return {"image_folder": folder}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error extracting image text: {e}"
+        )
+
+@app.post("/extract/arm-cohort-tables", response_model=dict)
+async def extract_arm_cohort_tables(request: FilePathRequest):
+    await validate_file_path(request.file_path)
+    try:
+        tables = await asyncio.to_thread(arm_cohort_table_extractor, request.file_path)
+        return {"arm_cohort_tables": tables}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error extracting arm/cohort tables: {e}"
+        )
+
+@app.post("/extract/inclusion-count", response_model=dict)
+async def extract_inclusion_count(request: FilePathRequest):
+    await validate_file_path(request.file_path)
+    try:
+        counts = await asyncio.to_thread(inclusion_count_extractor, request.file_path)
+        return {"inclusion_counts": counts}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error extracting inclusion counts: {e}"
+        )
+
+@app.post("/extract/exclusion-count", response_model=dict)
+async def extract_exclusion_count(request: FilePathRequest):
+    await validate_file_path(request.file_path)
+    try:
+        counts = await asyncio.to_thread(exclusion_count_extractor, request.file_path)
+        return {"exclusion_counts": counts}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error extracting exclusion counts: {e}"
+        )
+
+@app.post("/extract/mh-cm-ae-extractor", response_model=dict)
+async def mh_cm_ae_extact(request: FilePathRequest):
+    await validate_file_path(request.file_path)
+    try:
+        data = await asyncio.to_thread(mh_cm_ae_extractor, request.file_path)
+        return {"protocol_data": data}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing protocol: {e}"
+        )
+        
+
+@app.post("/extract/getsoa", response_model = dict)
+async def get_soa_section(request: FilePathRequest):
+    await validate_file_path(request.file_path)
+    try:
+        content = await asyncio.to_thread(get_soa_section_content, request.file_path)
+        return {"section content": content}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error extraction get_soa_section_content: {e}"
+        )
+        
