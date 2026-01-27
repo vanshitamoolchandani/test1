@@ -1,431 +1,91 @@
-package com.geninvo.protocolScrapper.api.util;
 
-import com.adobe.pdfservices.operation.PDFServices;
-import com.adobe.pdfservices.operation.PDFServicesMediaType;
-import com.adobe.pdfservices.operation.PDFServicesResponse;
-import com.adobe.pdfservices.operation.auth.Credentials;
-import com.adobe.pdfservices.operation.auth.ServicePrincipalCredentials;
-import com.adobe.pdfservices.operation.exception.SDKException;
-import com.adobe.pdfservices.operation.exception.ServiceApiException;
-import com.adobe.pdfservices.operation.exception.ServiceUsageException;
-import com.adobe.pdfservices.operation.io.Asset;
-import com.adobe.pdfservices.operation.io.StreamAsset;
-import com.adobe.pdfservices.operation.pdfjobs.jobs.ExportPDFJob;
-import com.adobe.pdfservices.operation.pdfjobs.params.exportpdf.ExportPDFParams;
-import com.adobe.pdfservices.operation.pdfjobs.params.exportpdf.ExportPDFTargetFormat;
-import com.adobe.pdfservices.operation.pdfjobs.result.ExportPDFResult;
+def tokengeneration(email):
 
-import org.apache.commons.io.IOUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-
-
-import java.io.InputStream;
-import java.io.ByteArrayOutputStream;
-
-public class AdobePdfConverter {
+    payload = {"email": email, "exp": datetime.datetime.now(tz=timezone.utc)+timedelta(minutes=2400),
+            "iat": datetime.datetime.now(tz=timezone.utc),
+            }
+    token = jwt.encode(payload, SECRET_KEY, algorithm = "HS256")
+   
 
     
-	public static byte[] convertToDocx(InputStream inputStream) {
-        try {
-            // Load credentials (service account)
-            Credentials credentials = new ServicePrincipalCredentials("4f8f1bb2b8a442ed91ee8d7ce283104c", "p8e-aJSoh03uJ_-5qbQJqgNMGWyeTHZVsgAg");
-            PDFServices pdfServices = new PDFServices(credentials);
+    return token
 
-            // Create Asset from input stream
-            Asset asset = pdfServices.upload(inputStream, PDFServicesMediaType.PDF.getMediaType());
 
-            // Set conversion parameters
-            ExportPDFParams exportPDFParams = ExportPDFParams.exportPDFParamsBuilder(ExportPDFTargetFormat.DOCX)
-                    .build();
+def decodejwttoken(auth_header):
+    try:
+        
 
-            // Create and execute job
-            ExportPDFJob exportPDFJob = new ExportPDFJob(asset, exportPDFParams);
-            String location = pdfServices.submit(exportPDFJob);
-            PDFServicesResponse<ExportPDFResult> pdfServicesResponse = pdfServices.getJobResult(location,
-                    ExportPDFResult.class);
+        token = auth_header.split(" ")[1]
+        token = token.split('"')[0]
+        payload = jwt.decode(token, SECRET_KEY,algorithms=["HS256"])
+        email = payload.get("email")
+        exp_time = payload.get("exp")
+        current_time = datetime.datetime.now(timezone.utc)
+        totTime = getUserLastLogin(email)
+        print("TotTime")
+        print(totTime)
+        exp_time_token = datetime.datetime.fromtimestamp(exp_time, timezone.utc)
+        remaining_time = exp_time_token - current_time
+        print("totTime type:", type(totTime), "val: ", totTime)
+        if(totTime >= 720):
+            return {"message": "Token Expired","status":401}
+    
+        # print('remaining time==>',remaining_time)
+        if (remaining_time.total_seconds())/60 <= 5 :
+            
+            token = tokengeneration(email)
 
-            // Get the converted file
-//            Asset resultAsset = pdfServicesResponse.getResult().getAsset();
-//            InputStream resultStream = pdfServices.getContent(resultAsset).getInputStream();
-//
-//            // Convert stream to byte array
-//            return IOUtils.toByteArray(resultStream);
 
             
-            Asset resultAsset = pdfServicesResponse.getResult().getAsset();
-            StreamAsset streamAsset = pdfServices.getContent(resultAsset);
-
-            // Creates an output stream and copy stream asset's content to it
-            Files.createDirectories(Paths.get("output/"));
-            OutputStream outputStream = Files.newOutputStream(new File("/home/vanshita.m297/Desktop/test/61186372NSC2002---Protocol CHN1.docx").toPath());
-            IOUtils.copy(streamAsset.getInputStream(), outputStream);
-
-        } catch (IOException | ServiceApiException | ServiceUsageException | SDKException e) {
-            throw new RuntimeException("PDF to DOCX conversion failed", e);
-        }
-    }
-}
-
-package com.example.pdfconverter.service;
-
-import com.example.pdfconverter.util.AdobePdfUtil;
-import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
-
-import java.io.IOException;
-
-@Service
-public class PdfService {
-
-    public byte[] convertPdfToDocx(MultipartFile file) {
-        try {
-            return AdobePdfUtil.convertPdfToDocx(file.getInputStream());
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to read input file", e);
-        }
-    }
-}
-
-
-
-
-@PostMapping(value = "/convert", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-public ResponseEntity<byte[]> convertPdfToDocx(@RequestParam("file") MultipartFile file) {
-    byte[] convertedFile = pdfService.convertPdfToDocx(file);
-
-    // Extract original file name without extension
-    String originalFilename = file.getOriginalFilename();
-    String outputFilename = "converted.docx"; // fallback
-
-    if (originalFilename != null && originalFilename.contains(".")) {
-        int dotIndex = originalFilename.lastIndexOf('.');
-        outputFilename = originalFilename.substring(0, dotIndex) + ".docx";
-    }
-
-    HttpHeaders headers = new HttpHeaders();
-    headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
-    headers.setContentDisposition(ContentDisposition.attachment()
-            .filename(outputFilename)
-            .build());
-
-    return new ResponseEntity<>(convertedFile, headers, HttpStatus.OK);
-
-import json
-import hug
-import os
-import pandas as pd
-from utils.text_processing import read_word_file
-from utils.check import validate_and_update_entities
-from utils.extract_data import (
-    mh_cm_ae_extractor, exclusion_count_extractor, inclusion_count_extractor, title_extractor, amendment_date_extractor, age_extractor, weight_extractor, participant_count_extractor, ratio_extractor, image_text_extractor, therapeutic_area_extractor, arm_cohort_table_extractor, inclusion_count_extractor, get_soa_section_content)
-
-
-
-
-file_path = "/commonshare/Datalution_ProtocolScrapper/Vanshita_workspace/Protocol-Scrapper/data/67953964MDD1006---Protocol.docx"
-
-
-
-
-if not os.path.exists(file_path):
-    print(f"Errror finding the path, {e}")
-
-
-extracted_data = {
-            "Title of Protocol": title_extractor(file_path),
-            "Amendment Date": amendment_date_extractor(file_path),
-            "Age": age_extractor(file_path),
-            "Weight": weight_extractor(file_path),
-            "extract participant count": participant_count_extractor(file_path), 
-            "Ratios": ratio_extractor(file_path),
-            "Schema": image_text_extractor(file_path), 
-            "Therapeutic Area": therapeutic_area_extractor(title_extractor(file_path)),
-            "ArmCohortTableExtractor": arm_cohort_table_extractor(file_path), 
-            "Inclusion Criteria": inclusion_count_extractor(file_path),
-            "Exclusion Criteria": exclusion_count_extractor(file_path),
-            "mh_cm_ae_extractor": mh_cm_ae_extractor(file_path),
-            "SoA": get_soa_section_content(file_path)
-        }
-
-def convert_sets(obj):
-    if isinstance(obj, set):
-        return list(obj)
-    elif isinstance(obj, pd.DataFrame):
-        return obj.to_dict(orient = "records")
-    elif isinstance(obj, dict):
-        return {k: convert_sets(v) for k, v in obj.items()}
-    elif isinstance(set, list):
-        return [convert_sets(i) for i in obj]
-    return obj
-
-
-extracted_data_cleaned = convert_sets(extracted_data)
-
-file_name = os.path.splitext(os.path.basename(file_path))[0]
-
-# print("Debugging extrcted data type")
-
-# for key, value in extracted_data_cleaned.items():
-#     print(f"{key}: {type(value)}")
-
-
-output_dir = "output"
-os.makedirs(output_dir, exist_ok = True)
-
-output_file =os.path.join(output_dir, f"{file_name}_extracted_data.json") 
-with open(output_file, "w") as f:
-    json.dump(extracted_data_cleaned, f, indent=4)
-
-
-
-
-# Call the validator
-# validate_and_update_entities(
-#     mh_file=os.path.join(output_dir, "../generic_AE_CM_MH/MH_output.json"),
-#     cm_file=os.path.join(output_dir, "../generic_AE_CM_MH/CM_output.json"),
-#     ae_file=os.path.join(output_dir, "../generic_AE_CM_MH/AE_output.json"),
-#     mapping_file=os.path.join(output_dir, "extracted_data.json")
-# )
-
-
-print("complete")
-
-
-
-
-
-import asyncio
-import os
-from fastapi import FastAPI, HTTPException, status
-from pydantic import BaseModel
-
-# Import your extractor functions
-from utils.extract_data import (
-    get_soa_section_content, mh_cm_ae_extractor, exclusion_count_extractor, inclusion_count_extractor, title_extractor, amendment_date_extractor, age_extractor, weight_extractor, participant_count_extractor, ratio_extractor, image_text_extractor, therapeutic_area_extractor, arm_cohort_table_extractor, inclusion_count_extractor)
-
-
-app = FastAPI(
-    title="Protocol Document Extractor API",
-    version="1.1.0"
-)
-
-class FilePathRequest(BaseModel):
-    file_path: str
-
-
-class SectionRequest(BaseModel):
-    section_header: str
-    next_section_header: str
-    file_path: str
-
-async def validate_file_path(path: str):
-    if not os.path.isfile(path):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"File not found: {path}"
-        )
-    if not path.lower().endswith(".docx"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid file type (expected .docx): {path}"
-        )
-
-@app.get("/", response_model=dict)
-async def root_check():
-    return {"status": "API is running"}
-
-@app.post("/extract/title", response_model=dict)
-async def extract_title(request: FilePathRequest):
-    await validate_file_path(request.file_path)
-    try:
-        title = await asyncio.to_thread(title_extractor, request.file_path)
-        return {"title": title}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error extracting title: {e}"
-        )
-
-@app.post("/extract/amendment", response_model=dict)
-async def extract_amendment(request: FilePathRequest):
-    await validate_file_path(request.file_path)
-    try:
-        amendment = await asyncio.to_thread(amendment_date_extractor, request.file_path)
-        return {"amendment": amendment}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error extracting amendment date: {e}"
-        )
-
-@app.post("/extract/age", response_model=dict)
-async def extract_age(request: FilePathRequest):
-    await validate_file_path(request.file_path)
-    try:
-        ages = await asyncio.to_thread(age_extractor, request.file_path)
-        return {"age": ages}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error extracting age: {e}"
-        )
-
-@app.post("/extract/weight", response_model=dict)
-async def extract_weight(request: FilePathRequest):
-    await validate_file_path(request.file_path)
-    try:
-        weight_info = await asyncio.to_thread(weight_extractor, request.file_path)
-        return {"weight_criteria": weight_info}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error extracting weight criteria: {e}"
-        )
-
-@app.post("/extract/participants", response_model=dict)
-async def extract_participants(request: FilePathRequest):
-    await validate_file_path(request.file_path)
-    try:
-        participants = await asyncio.to_thread(participant_count_extractor, request.file_path)
-        return {"participants": participants}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error extracting participants: {e}"
-        )
-
-@app.post("/extract/ratio", response_model=dict)
-async def extract_ratio(request: FilePathRequest):
-    await validate_file_path(request.file_path)
-    try:
-        ratios = await asyncio.to_thread(ratio_extractor, request.file_path)
-        return {"ratios": ratios}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error extracting ratio: {e}"
-        )
-
-@app.post("/extract/therapeutic-area", response_model=dict)
-async def extract_therapeutic_area(request: FilePathRequest):
-    try:
-        title = await asyncio.to_thread(title_extractor, request.file_path)
-        result = await asyncio.to_thread(therapeutic_area_extractor, title)
-        return result
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error extracting therapeutic area: {e}"
-        )
-
-@app.post("/extract/image-text", response_model=dict)
-async def extract_image_text(request: FilePathRequest):
-    await validate_file_path(request.file_path)
-    try:
-        folder = await asyncio.to_thread(image_text_extractor, request.file_path)
-        return {"image_folder": folder}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error extracting image text: {e}"
-        )
-
-@app.post("/extract/arm-cohort-tables", response_model=dict)
-async def extract_arm_cohort_tables(request: FilePathRequest):
-    await validate_file_path(request.file_path)
-    try:
-        tables = await asyncio.to_thread(arm_cohort_table_extractor, request.file_path)
-        return {"arm_cohort_tables": tables}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error extracting arm/cohort tables: {e}"
-        )
-
-@app.post("/extract/inclusion-count", response_model=dict)
-async def extract_inclusion_count(request: FilePathRequest):
-    await validate_file_path(request.file_path)
-    try:
-        counts = await asyncio.to_thread(inclusion_count_extractor, request.file_path)
-        return {"inclusion_counts": counts}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error extracting inclusion counts: {e}"
-        )
-
-@app.post("/extract/exclusion-count", response_model=dict)
-async def extract_exclusion_count(request: FilePathRequest):
-    await validate_file_path(request.file_path)
-    try:
-        counts = await asyncio.to_thread(exclusion_count_extractor, request.file_path)
-        return {"exclusion_counts": counts}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error extracting exclusion counts: {e}"
-        )
-
-@app.post("/extract/mh-cm-ae-extractor", response_model=dict)
-async def mh_cm_ae_extact(request: FilePathRequest):
-    await validate_file_path(request.file_path)
-    try:
-        data = await asyncio.to_thread(mh_cm_ae_extractor, request.file_path)
-        return {"protocol_data": data}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error processing protocol: {e}"
-        )
+            return {"message":email,"status":200,"token":token}
+            
+        return {"message":email,"status":200,"token":""}
+
+        # if not email:
+        #     raise AuthenticationFailed("authtication failed")
+        # else:
+    except jwt.ExpiredSignatureError:
         
+        return {"message": "Token Expired","status":401}
+    except jwt.InvalidTokenError:
+       
+        return {"message": "Invalid token","status":401}
+    
 
-@app.post("/extract/getsoa", response_model = dict)
-async def get_soa_section(request: FilePathRequest):
-    await validate_file_path(request.file_path)
+# from fastapi import FastAPI
+
+# app = FastAPI()
+
+# Database connection settings for local
+# server = '192.168.2.13'
+# database = 'DATALUTION_DEV'
+# username = 'dt_temp_user'
+# password = 'xh3hbuefumNJEBFJb4g7f:[202125'
+
+
+# Database connection settings for test/QA/dev environment
+server = os.getenv('SQL_URL')
+database =  os.getenv('SQL_DB')
+username = os.getenv('SQL_USER')
+password =  os.getenv('SQL_PASS')
+
+
+driver = '{ODBC Driver 17 for SQL Server}'
+
+# Connection string
+conn_str = f'DRIVER={driver};SERVER={server};DATABASE={database};UID={username};PWD={password}'
+
+def getUserLastLogin(email):
     try:
-        content = await asyncio.to_thread(get_soa_section_content, request.file_path)
-        return {"section content": content}
-    except HTTPException:
-        raise
+        with pyodbc.connect(conn_str) as conn:
+            cursor = conn.cursor()
+            # Call the stored procedure
+            cursor.execute("{CALL usp_DL_USER_LAST_LOGIN_GET (?)}", (email))
+            result = cursor.fetchall()
+            # Convert result to list of dicts
+            columns = [column[0] for column in cursor.description]
+            data = [dict(zip(columns, row)) for row in result]
+            print('ok==>',data[0]["LAST_LOGIN_TM"])
+            return data[0]["LAST_LOGIN_TM"]
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error extraction get_soa_section_content: {e}"
-        )
-        
+        return {"success": False, "error": str(e)}
