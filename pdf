@@ -1,397 +1,68 @@
-import asyncio
-import json
-from typing import List
-from fastapi import FastAPI, Request
-import httpx
-from starlette.responses import Response
-import datetime
-from enc_dec_service import *
-from auth_helper import *
-from settings import *
-
-TEMP_AUTH=''
-app = FastAPI()
-
-app = FastAPI()
-# backend_services = { "dgcollect": "http://dgcollect:4001", "dganalysis": "http://dganalysis:4002", "dgresult": "http://dgresult:4003", "datafetch": "http://datafetch:5001", "filemanager": "http://filemanager:6001", "dtagen": "http://dtagen:7001" }
-# backend_services = { "dgcollect": "http://10.15.1.231:4001", "dganalysis": "http://10.15.1.230:4002", "dgresult": "http://10.15.1.227:4003", "datafetch": "http://10.15.1.226:5001", "filemanager": "http://10.15.1.228:6001", "dtagen": "http://10.15.1.229:7001" }
-# backend_services = { "dgcollect": "http://localhost:4001", "dganalysis": "http://localhost:4002", "dgresult": "http://localhost:4003", "datafetch": "http://localhost:5001", "filemanager": "http://localhost:6001", "dtagen": "http://localhost:7001" }
-# timeout=httpx.Timeout(read=3600, write=180, connect=10, pool=10)
-backend_services = { "dgcollect": "http://10.15.8.100:4001", "dganalysis": "http://10.15.10.102:4002", "dgresult": "http://10.15.8.103:4003", "datafetch": "http://localhost:5001", "filemanager": "http://10.15.8.228:6001", "dtagen": "http://10.15.11.229:7001" }
-
-timeout = httpx.Timeout(connect=None, read=None, write=None, pool=None)
-
-@app.get("/{service}/{path:path}")
-async def gateway(request: Request, service: str, path: str):
-    global TEMP_AUTH
-    # Extract query parameters and headers
-    # temp_auth_token=temp_auth_token
-    if(request['path'] not in  EXEMPTED_URLS):
-        try:
-    
-            auth_token = request.headers['Authorization']
-
-        except:
-             return Response(json.dumps({"message":"User is unauthorized ", "status":False}),status_code=401)
-
-       
-        decoded_user_details=decodejwttoken(auth_token)
-        # get from users decodejwttoken import
-        if(decoded_user_details['status']==401):
-            return Response(json.dumps(decoded_user_details),status_code=401)
-        else:
-            if 'token' in decoded_user_details:
-                TEMP_AUTH=decoded_user_details['token']
-                
-    query_params = request.query_params
-    if not query_params:
-        
-        query_params_updated=query_params
-    else:
-        
-        query_params_updated={}
-    
-    for param in query_params:
-        
-        query_params_updated[param]=decrypt(query_params[param])
-    headers = request.headers
-  
-    parms = path.split('/')
-    backend_url = backend_services.get(parms[0])
-    if not backend_url:
-        backend_url = backend_services.get('datafetch')
-        # return {"error": "Service not found"}
-    
-    full_url = f"{backend_url}/{service}/{path}"
-    
-    async with httpx.AsyncClient(timeout=timeout) as client: response = await client.get(full_url, params=query_params_updated, headers=headers)
-    updated_response=response.json()
-    if ENCRYPTION_ENABLED:
-            # if response['media_type']=='application/json':
-            #     pass
-            # else:
-            #     pass
-            if 'data' in updated_response:
-             
-                updated_response['data']=encrypt(json.dumps(updated_response['data'],default=str))
-            if 'data' not in updated_response and 'message' in updated_response:
-                   
-                    if not isinstance(response.json()['message'],str):
-                       updated_response['message']=encrypt(json.dumps(updated_response['message']))
-    
-    if TEMP_AUTH!='':
-        updated_response['temp_auth_token']=TEMP_AUTH
-        TEMP_AUTH=''
-    return updated_response
-
-@app.post("/{service}/{path:path}")
-async def post_gateway(request: Request, service: str, path: str):
-    global TEMP_AUTH
-    # temp_auth_token=temp_auth_token
-    headers = request.headers
-    body = await request.json()
-    if(request['path'] not in  EXEMPTED_URLS):
-        try:
-            auth_token = request.headers['Authorization']
-        except:
-             return Response(json.dumps({"message":"User is unauthorized ", "status":False}),status_code=401)
-
-        decoded_user_details=decodejwttoken(auth_token)
-        # get from users decodejwttoken import
-        if(decoded_user_details['status']==401):
-            return Response(json.dumps(decoded_user_details),status_code=401)
-        else:
-            if 'token' in decoded_user_details:
-                TEMP_AUTH=decoded_user_details['token']
-                
-    if ENCRYPTION_ENABLED==True:
-        
-        if(request['path'] not in upload_urls):
-                   
-            params = body['data']
-            # ['data']
-            if isinstance(params, bytes):
-               
-                params = params.decode("utf-8")
-                #decrypt logic
-                params = json.loads(decrypt(params))
-
-            if isinstance(params, str):
-                
-                #decrypt logic
-                params = json.loads(decrypt(params))
-
-            # myjson = body
-            myjson = params
-            body=params
-            # body= bytes(json.dumps(myjson), encoding='utf-8')
-            
-                
-    parms = path.split('/')
-    backend_url = backend_services.get(parms[0])
-    if not backend_url:
-        backend_url = backend_services.get('datafetch')
-        return {"error": "Service not found"}
-    full_url = f"{backend_url}/{service}/{path}"
-    print("Raw path:", path)
-    print("parms:", parms)
-    print("service )parms[0]:", parms[0] if parms else None)
-    print("full_url:", full_url)
-    headers = {'Content-Type': 'application/json'}
-    async with httpx.AsyncClient(timeout=timeout) as client:
-       
-        response = await client.post(full_url, json=body, headers=headers)
-        updated_response=response.json()
-        if ENCRYPTION_ENABLED:
-            
-            # if response['media_type']=='application/json':
-            #     pass
-            # else:
-            #     pass
-            if 'data' in updated_response:
-               
-                updated_response['data']=encrypt(json.dumps(updated_response['data'],default=str))
-            if 'data' not in updated_response and 'message' in updated_response:
-                    
-                    if not isinstance(response.json()['message'],str):
-                       updated_response['message']=encrypt(json.dumps(updated_response['message']))
-        if TEMP_AUTH!='':
-            updated_response['temp_auth_token']=TEMP_AUTH
-            TEMP_AUTH=''
-        
-        return updated_response
-
-
-async def post_request(client, url, payload):
-    headers = {'Content-Type': 'application/json'}
-    retries = 3
-    for attempt in range(retries):
-        try:
-            response = await client.post(url, json=payload, headers=headers)
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            if attempt < retries - 1:
-                now = datetime.datetime.now()
-                print(f"Retry on {now} again {url} for {payload} due to {e}")
-                await asyncio.sleep(15) # Optional: wait before retrying
-                continue
-            return {"error": f"Request failed after {retries} attempts", "details": str(e)}
-    # response = await client.post(url, json=payload, headers=headers)
-    # return response.json()
-
-
-@app.put("/api/concurrent-steps")
-async def concurrent_step1(request: Request):
-    global TEMP_AUTH
-    # temp_auth_token=temp_auth_token
-    if(request['path'] not in  EXEMPTED_URLS):
-        try:
-            auth_token = request.headers['Authorization']
-        except:
-             return Response(json.dumps({"message":"User is unauthorized ", "status":False}),status_code=401)
-
-        
-        decoded_user_details=decodejwttoken(auth_token)
-        # get from users decodejwttoken import
-        if(decoded_user_details['status']==401):
-            return Response(json.dumps(decoded_user_details),status_code=401)
-        else:
-            if 'token' in decoded_user_details:
-                TEMP_AUTH=decoded_user_details['token']
-                
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        payloads = await request.json()
-        if ENCRYPTION_ENABLED==True:
-            params = payloads['data']
-            # ['data']
-            if isinstance(params, bytes):
-                
-                params = params.decode("utf-8")
-                #decrypt logic
-                params = json.loads(decrypt(params))
-
-            if isinstance(params, str):
-                
-                #decrypt logic
-                params = json.loads(decrypt(params))
-
-            payloads=params
-            # body= bytes(json.dumps(myjson), encoding='utf-8')
-    
-        backend_url = backend_services.get("dgcollect")
-       
-        url = f"{backend_url}/api/dgcollect/step1process/"
-        callLABCombinedAPI = "yes"
-        for payload in payloads:
-            modifiedPayload = payload
-            LABpayloads = payload["LABpayLoad"]
-            LABcombinePayloads = payload["LABcombinePayload"]
-            callLABCombinedAPI = LABpayloads[0]["empty"]
-            LoggedInEmail = modifiedPayload["email"]
-            step2payload = {
-                "userId": modifiedPayload["userId"],
-                "projectId": modifiedPayload["projectId"],
-                "studyName": modifiedPayload["studyName"],
-                "version": modifiedPayload["version"],
-                "datasetName": modifiedPayload["allDataSet"],
-                "key": modifiedPayload["key"],
-                "multiphase": modifiedPayload["multiphase"]
-            }
-            emailPayload = {
-                "email": modifiedPayload["email"],
-                "first_name": modifiedPayload["first_name"],
-                "last_name": modifiedPayload["last_name"],
-                "studyname": modifiedPayload["studyName"],
-                "emailstatus": "complete",
-                "version":modifiedPayload["version"],
-                "user_id": modifiedPayload["user_id"],
-                "project_id": modifiedPayload["projectId"]
-            }
-            affectedLbOrVital = {
-                "studyName": modifiedPayload["studyName"],  
-                "version":modifiedPayload["version"]}
-        # print(f"LAB DATA PAY LOAD=============={LABpayloads}")
-        # print(f"LAB Combine PAY LOAD=============={LABcombinePayloads}")
-        # print(f"Email PAY LOAD=============={emailPayload}")
-        # print(f"Lab Dataset List Generation Empty {callLABCombinedAPI}")
-        now = datetime.datetime.now()
-        print(f"Step 1 Started===========================>{LoggedInEmail}======={now}")
-
-        payloads=[payloads[i:i + 30] for i in range(0, len(payloads), 30)]
-
-        for payload in payloads:
-            step1tasks = [post_request(client, url, pay) for pay in payload]
-            step1Responses = await asyncio.gather(*step1tasks, return_exceptions=True)
-            print("Step 1 Response===============================================>", step1Responses)
-
-        now = datetime.datetime.now()
-        print(f"Step 1 Completed==================================>{LoggedInEmail}======={now}")
-        print("Step 1 Response===============================================>", step1Responses)
-        backend_url = backend_services.get("dganalysis")
-        url = f"{backend_url}/api/dganalysis/step2process/"
-
-        now = datetime.datetime.now()
-        print(f"Step 2 Started===========================>{LoggedInEmail}======={now}")
-        step2tasks = [post_request(client, url, step2payload)]
-        step2Responses = await asyncio.gather(*step2tasks, return_exceptions=True)
-        now = datetime.datetime.now()
-        print(f"Step 2 Completed===========================>{LoggedInEmail}======={now}")
-        print("Step 2 Response===============================================>", step2Responses)
-        backend_url = backend_services.get("dgresult")
-        url = f"{backend_url}/api/dgresult/step3process/"
-        now = datetime.datetime.now()
-        print(f"Step 3 Started===========================>{LoggedInEmail}======={now}")
-        for payload in payloads:
-            step3tasks = [post_request(client, url, pay) for pay in payload]
-            step3Responses = await asyncio.gather(*step3tasks, return_exceptions=True)
-
-        now = datetime.datetime.now()
-        print(f"Step 3 Completed===========================>{LoggedInEmail}======={now}")
-        print("Step 3 Response===============================================>", step3Responses)
-
-
-        now = datetime.datetime.now()
-        print(f"LAB Started===========================>{LoggedInEmail}======={now}")
-        backend_url = backend_services.get("dganalysis")
-        url = f"{backend_url}/api/dganalysis/labdatasetgeneration_api/"
-        LABtasks = [post_request(client, url, payload) for payload in LABpayloads]
-        LABResponses = await asyncio.gather(*LABtasks, return_exceptions=True)
-        print(f"LAB Completed===========================>{LoggedInEmail}======={now}")
-        # print("LAB Response===============================================>", LABResponses)
-        if callLABCombinedAPI == "no":
-            now = datetime.datetime.now()
-            print(f"LAB Combined Started===========================>{LoggedInEmail}======={now}")
-            backend_url = backend_services.get("dganalysis")
-            url = f"{backend_url}/api/dganalysis/combinelabdatasets/"
-            LABcombineTasks = [post_request(client, url, LABcombinePayloads)]
-            LABcombineResponses = await asyncio.gather(*LABcombineTasks, return_exceptions=True)
-            print(f"LAB Combined Completed===========================>{LoggedInEmail}======={now}")
-            # print("LAB Combine Response===============================================>", LABcombineResponses)
-        else :
-            now = datetime.datetime.now()
-            print(f"LAB Combined API Not required to call======================>{LoggedInEmail}======={now}")
-
-        #lab or vital affected by adverse event.
-        backend_url = backend_services.get("dgcollect")
-        url = f"{backend_url}/api/dgcollect/affectedLbOrVital/"
-        now = datetime.datetime.now()
-        print(f"affectedLbOrVital Started===========================>{LoggedInEmail}======={now}")
-        print('values-----------------',affectedLbOrVital)
-        affectedLbOrVitaltasks = [post_request(client, url,affectedLbOrVital)]
-        affectedLbOrVitalResponses = await asyncio.gather(*affectedLbOrVitaltasks, return_exceptions=True)
-        now = datetime.datetime.now()
-        print(f"affectedLbOrVital Completed===========================>{LoggedInEmail}======={now}")
-        print("affectedLbOrVital Response===============================================>", affectedLbOrVitalResponses)
-
-        backend_url = backend_services.get("datafetch")
-        url = f"{backend_url}/api/datafetch/sendotp/"
-        now = datetime.datetime.now()
-        print(f"Send Mail Started===========================>{LoggedInEmail}======={now}")
-        sendMailtasks = [post_request(client, url, emailPayload)]
-        sendMailResponses = await asyncio.gather(*sendMailtasks, return_exceptions=True)
-        now = datetime.datetime.now()
-        print(f"Send Mail Completed===========================>{LoggedInEmail}======={now}")
-        # print("Send Mail Response===============================================>", sendMailResponses)
-        if TEMP_AUTH!='':
-           
-            resp={"data":"Success", "temp_auth_token":TEMP_AUTH}
-            TEMP_AUTH=''
-            return resp
-        else:
-
-            return {"data": "Success"}
-    
-@app.put("/api/independent")
-async def concurrent_step1(request: Request):
-    global TEMP_AUTH
-    # temp_auth_token=temp_auth_token
-    if(request['path'] not in  EXEMPTED_URLS):
-        try:
-            auth_token = request.headers['Authorization']
-        except:
-             return Response(json.dumps({"message":"User is unauthorized ", "status":False}),status_code=401)
-
-       
-        decoded_user_details=decodejwttoken(auth_token)
-        # get from users decodejwttoken import
-        if(decoded_user_details['status']==401):
-            return Response(json.dumps(decoded_user_details),status_code=401)
-        else:
-            if 'token' in decoded_user_details:
-                TEMP_AUTH=decoded_user_details['token']
-                
-    payloads = await request.json()
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        if ENCRYPTION_ENABLED==True:
-            params = payloads['data']
-            # ['data']
-            if isinstance(params, bytes):
-                
-                params = params.decode("utf-8")
-                #decrypt logic
-                params = json.loads(decrypt(params))
-
-            if isinstance(params, str):
-                
-                #decrypt logic
-                params = json.loads(decrypt(params))
-            payloads=params
-            # body= bytes(json.dumps(myjson), encoding='utf-8')
-    
-        backend_url = backend_services.get("dganalysis")
-        url = f"{backend_url}/api/dganalysis/independentFormGeneration/"
-        now = datetime.datetime.now()
-        LoggedInEmail = payloads[0]["email"]
-        print(f"Independent Started===========================>{LoggedInEmail}======={now}")
-        tasks = [post_request(client, url, payload) for payload in payloads]
-        responses = await asyncio.gather(*tasks, return_exceptions=True)
-        now = datetime.datetime.now()
-        print(f"Independent Completed===========================>{LoggedInEmail}======={now}")
-        print("Independent Response===================>",responses)
-        if TEMP_AUTH!='':
-            resp= {"data":responses, "temp_auth_token":TEMP_AUTH}
-            TEMP_AUTH=''
-            return resp
-        else:
-            return {"data": responses}
+    if(totTime >= 720):
+TypeError: '>=' not supported between instances of 'dict' and 'int'
+[2026-02-02 12:17:43 -0500] [40131] [CRITICAL] WORKER TIMEOUT (pid:40132)
+[2026-02-02 12:17:43 -0500] [40131] [CRITICAL] WORKER TIMEOUT (pid:40133)
+[2026-02-02 12:17:43 -0500] [40131] [CRITICAL] WORKER TIMEOUT (pid:40136)
+[2026-02-02 12:17:43 -0500] [40131] [ERROR] Worker (pid:40132) was sent code 134!
+[2026-02-02 12:17:43 -0500] [40156] [INFO] Booting worker with pid: 40156
+[2026-02-02 12:17:43 -0500] [40131] [ERROR] Worker (pid:40133) was sent SIGKILL! Perhaps out of memory?
+[2026-02-02 12:17:43 -0500] [40131] [ERROR] Worker (pid:40136) was sent SIGKILL! Perhaps out of memory?
+[2026-02-02 12:17:43 -0500] [40157] [INFO] Booting worker with pid: 40157
+[2026-02-02 12:17:43 -0500] [40158] [INFO] Booting worker with pid: 40158
+[2026-02-02 12:17:43 -0500] [40157] [INFO] Started server process [40157]
+[2026-02-02 12:17:43 -0500] [40157] [INFO] Waiting for application startup.
+[2026-02-02 12:17:43 -0500] [40157] [INFO] Application startup complete.
+[2026-02-02 12:17:43 -0500] [40156] [INFO] Started server process [40156]
+[2026-02-02 12:17:43 -0500] [40156] [INFO] Waiting for application startup.
+[2026-02-02 12:17:43 -0500] [40156] [INFO] Application startup complete.
+[2026-02-02 12:17:44 -0500] [40158] [INFO] Started server process [40158]
+[2026-02-02 12:17:44 -0500] [40158] [INFO] Waiting for application startup.
+[2026-02-02 12:17:44 -0500] [40158] [INFO] Application startup complete.
+TotTime
+{'success': False, 'error': "('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')"}
+totTime type: <class 'dict'> val:  {'success': False, 'error': "('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')"}
+[2026-02-02 12:17:50 -0500] [40135] [ERROR] Exception in ASGI application
+Traceback (most recent call last):
+  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/uvicorn/protocols/http/h11_impl.py", line 403, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/fastapi/applications.py", line 1134, in __call__
+    await super().__call__(scope, receive, send)
+  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/starlette/applications.py", line 113, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/fastapi/routing.py", line 125, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/fastapi/routing.py", line 111, in app
+    response = await f(request)
+  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/fastapi/routing.py", line 391, in app
+    raw_response = await run_endpoint_function(
+  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/fastapi/routing.py", line 290, in run_endpoint_function
+    return await dependant.call(**values)
+  File "/home/vanshita.m297/Desktop/Datalution/appgateway/main.py", line 99, in post_gateway
+    decoded_user_details=decodejwttoken(auth_token)
+  File "/home/vanshita.m297/Desktop/Datalution/appgateway/auth_helper.py", line 37, in decodejwttoken
+    if(totTime >= 720):
+TypeError: '>=' not supported between instances of 'dict' and 'int'
