@@ -1,68 +1,98 @@
-    if(totTime >= 720):
-TypeError: '>=' not supported between instances of 'dict' and 'int'
-[2026-02-02 12:17:43 -0500] [40131] [CRITICAL] WORKER TIMEOUT (pid:40132)
-[2026-02-02 12:17:43 -0500] [40131] [CRITICAL] WORKER TIMEOUT (pid:40133)
-[2026-02-02 12:17:43 -0500] [40131] [CRITICAL] WORKER TIMEOUT (pid:40136)
-[2026-02-02 12:17:43 -0500] [40131] [ERROR] Worker (pid:40132) was sent code 134!
-[2026-02-02 12:17:43 -0500] [40156] [INFO] Booting worker with pid: 40156
-[2026-02-02 12:17:43 -0500] [40131] [ERROR] Worker (pid:40133) was sent SIGKILL! Perhaps out of memory?
-[2026-02-02 12:17:43 -0500] [40131] [ERROR] Worker (pid:40136) was sent SIGKILL! Perhaps out of memory?
-[2026-02-02 12:17:43 -0500] [40157] [INFO] Booting worker with pid: 40157
-[2026-02-02 12:17:43 -0500] [40158] [INFO] Booting worker with pid: 40158
-[2026-02-02 12:17:43 -0500] [40157] [INFO] Started server process [40157]
-[2026-02-02 12:17:43 -0500] [40157] [INFO] Waiting for application startup.
-[2026-02-02 12:17:43 -0500] [40157] [INFO] Application startup complete.
-[2026-02-02 12:17:43 -0500] [40156] [INFO] Started server process [40156]
-[2026-02-02 12:17:43 -0500] [40156] [INFO] Waiting for application startup.
-[2026-02-02 12:17:43 -0500] [40156] [INFO] Application startup complete.
-[2026-02-02 12:17:44 -0500] [40158] [INFO] Started server process [40158]
-[2026-02-02 12:17:44 -0500] [40158] [INFO] Waiting for application startup.
-[2026-02-02 12:17:44 -0500] [40158] [INFO] Application startup complete.
-TotTime
-{'success': False, 'error': "('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')"}
-totTime type: <class 'dict'> val:  {'success': False, 'error': "('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')"}
-[2026-02-02 12:17:50 -0500] [40135] [ERROR] Exception in ASGI application
-Traceback (most recent call last):
-  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/uvicorn/protocols/http/h11_impl.py", line 403, in run_asgi
-    result = await app(  # type: ignore[func-returns-value]
-  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
-    return await self.app(scope, receive, send)
-  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/fastapi/applications.py", line 1134, in __call__
-    await super().__call__(scope, receive, send)
-  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/starlette/applications.py", line 113, in __call__
-    await self.middleware_stack(scope, receive, send)
-  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/starlette/middleware/errors.py", line 186, in __call__
-    raise exc
-  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/starlette/middleware/errors.py", line 164, in __call__
-    await self.app(scope, receive, _send)
-  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
-    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
-  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
-    raise exc
-  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
-    await app(scope, receive, sender)
-  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
-    await self.app(scope, receive, send)
-  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/starlette/routing.py", line 716, in __call__
-    await self.middleware_stack(scope, receive, send)
-  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/starlette/routing.py", line 736, in app
-    await route.handle(scope, receive, send)
-  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/starlette/routing.py", line 290, in handle
-    await self.app(scope, receive, send)
-  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/fastapi/routing.py", line 125, in app
-    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
-  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
-    raise exc
-  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
-    await app(scope, receive, sender)
-  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/fastapi/routing.py", line 111, in app
-    response = await f(request)
-  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/fastapi/routing.py", line 391, in app
-    raw_response = await run_endpoint_function(
-  File "/home/vanshita.m297/.conda/envs/myenv39/lib/python3.9/site-packages/fastapi/routing.py", line 290, in run_endpoint_function
-    return await dependant.call(**values)
-  File "/home/vanshita.m297/Desktop/Datalution/appgateway/main.py", line 99, in post_gateway
-    decoded_user_details=decodejwttoken(auth_token)
-  File "/home/vanshita.m297/Desktop/Datalution/appgateway/auth_helper.py", line 37, in decodejwttoken
-    if(totTime >= 720):
-TypeError: '>=' not supported between instances of 'dict' and 'int'
+import jwt
+
+from datetime import timezone,timedelta
+import datetime
+import pyodbc
+import os
+SECRET_KEY = "django-insecure-k1kyxby@gn7jq!%z^$sjhvlp#g$*k=q0tf-pxb*x3*rrjui@gt"
+
+def tokengeneration(email):
+
+    payload = {"email": email, "exp": datetime.datetime.now(tz=timezone.utc)+timedelta(minutes=2400),
+            "iat": datetime.datetime.now(tz=timezone.utc),
+            }
+    token = jwt.encode(payload, SECRET_KEY, algorithm = "HS256")
+   
+
+    
+    return token
+
+
+def decodejwttoken(auth_header):
+    try:
+        
+
+        token = auth_header.split(" ")[1]
+        token = token.split('"')[0]
+        payload = jwt.decode(token, SECRET_KEY,algorithms=["HS256"])
+        email = payload.get("email")
+        exp_time = payload.get("exp")
+        current_time = datetime.datetime.now(timezone.utc)
+        totTime = getUserLastLogin(email)
+        print("TotTime")
+        print(totTime)
+        exp_time_token = datetime.datetime.fromtimestamp(exp_time, timezone.utc)
+        remaining_time = exp_time_token - current_time
+        print("totTime type:", type(totTime), "val: ", totTime)
+        if(totTime >= 720):
+            return {"message": "Token Expired","status":401}
+    
+        # print('remaining time==>',remaining_time)
+        if (remaining_time.total_seconds())/60 <= 5 :
+            
+            token = tokengeneration(email)
+
+
+            
+            return {"message":email,"status":200,"token":token}
+            
+        return {"message":email,"status":200,"token":""}
+
+        # if not email:
+        #     raise AuthenticationFailed("authtication failed")
+        # else:
+    except jwt.ExpiredSignatureError:
+        
+        return {"message": "Token Expired","status":401}
+    except jwt.InvalidTokenError:
+       
+        return {"message": "Invalid token","status":401}
+    
+
+# from fastapi import FastAPI
+
+# app = FastAPI()
+
+# Database connection settings for local
+# server = '192.168.2.13'
+# database = 'DATALUTION_DEV'
+# username = 'dt_temp_user'
+# password = 'xh3hbuefumNJEBFJb4g7f:[202125'
+
+
+# Database connection settings for test/QA/dev environment
+server = os.getenv('SQL_URL')
+database =  os.getenv('SQL_DB')
+username = os.getenv('SQL_USER')
+password =  os.getenv('SQL_PASS')
+
+
+driver = '{ODBC Driver 17 for SQL Server}'
+
+# Connection string
+conn_str = f'DRIVER={driver};SERVER={server};DATABASE={database};UID={username};PWD={password}'
+
+def getUserLastLogin(email):
+    try:
+        with pyodbc.connect(conn_str) as conn:
+            cursor = conn.cursor()
+            # Call the stored procedure
+            cursor.execute("{CALL usp_DL_USER_LAST_LOGIN_GET (?)}", (email))
+            result = cursor.fetchall()
+            # Convert result to list of dicts
+            columns = [column[0] for column in cursor.description]
+            data = [dict(zip(columns, row)) for row in result]
+            print('ok==>',data[0]["LAST_LOGIN_TM"])
+            return data[0]["LAST_LOGIN_TM"]
+    except Exception as e:
+        return {"success": False, "error": str(e)}
