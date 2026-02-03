@@ -1,34 +1,50 @@
-layout.component.ts:290 ERROR Http failure response for http://localhost:4200/api/datafetch/versionOfUploadedDocuments/?projectName=null&user_id=95: 504 Gateway Timeout
-load		
-versionOfUploadedDocument	@	layout.component.ts:290
-(anonymous)	@	layout.component.ts:83
-load		
-(anonymous)	@	layout.component.ts:78
-ngOnInit	@	layout.component.ts:51
-Promise.then		
-webpackJsonpCallback	@	bootstrap:25
-(anonymous)	@	dashboard-dashboard-module.js:1
-Show 202 more frames
-core.js:4197 ERROR 
-Error: ExpressionChangedAfterItHasBeenCheckedError: Expression has changed after it was checked. Previous value: 'false'. Current value: 'true'.
-    at throwErrorIfNoChangesMode (core.js:5468:1)
-    at bindingUpdated (core.js:13013:1)
-    at Module.ɵɵproperty (core.js:13808:1)
-    at NgxSpinnerComponent_Template (ngx-spinner.js:316:26)
-    at executeTemplate (core.js:7303:1)
-    at refreshView (core.js:7172:1)
-    at refreshComponent (core.js:8326:1)
-    at refreshChildComponents (core.js:6965:1)
-    at refreshView (core.js:7222:1)
-    at refreshComponent (core.js:8326:1)
-Show 29 more frames
-createproject.component.ts:97 
- GET http://localhost:4200/api/datafetch/getUserTableByClientid/ 500 (Internal Server Error)
-getProjectLeadList	@	createproject.component.ts:97
-ngOnInit	@	createproject.component.ts:33
-Show 67 more frames
-createproject.component.ts:97 ERROR Http failure response for http://localhost:4200/api/datafetch/getUserTableByClientid/: 500 Internal Server Error
-load		
-getProjectLeadList	@	createproject.component.ts:97
-ngOnInit	@	createproject.component.ts:33
-Show 135 more frames
+def decodejwttoken(auth_header):
+    try:
+        token = auth_header.split(" ")[1]
+        token = token.split('"')[0]
+
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        email = payload.get("email")
+        exp_time = payload.get("exp")
+
+        current_time = datetime.datetime.now(timezone.utc)
+
+        totTime = getUserLastLogin(email)
+        print("TotTime:", totTime, "type:", type(totTime))
+
+        # ✅ If DB failed, don't crash. Return a clean response.
+        if isinstance(totTime, dict) and totTime.get("success") is False:
+            return {
+                "message": "Auth DB unavailable (last login check failed)",
+                "status": 503,
+                "details": totTime.get("error"),
+            }
+
+        # ✅ Normalize totTime to a number of minutes
+        # If stored procedure returns datetime, compute minutes since that time.
+        if isinstance(totTime, datetime.datetime):
+            mins_since_login = (current_time - totTime).total_seconds() / 60.0
+        else:
+            # If it's already numeric (int/float/decimal/str), convert safely
+            try:
+                mins_since_login = float(totTime)
+            except Exception:
+                mins_since_login = 0.0
+
+        if mins_since_login >= 720:
+            return {"message": "Token Expired", "status": 401}
+
+        # existing JWT exp logic
+        exp_time_token = datetime.datetime.fromtimestamp(exp_time, timezone.utc)
+        remaining_time = exp_time_token - current_time
+
+        if (remaining_time.total_seconds() / 60) <= 5:
+            new_token = tokengeneration(email)
+            return {"message": email, "status": 200, "token": new_token}
+
+        return {"message": email, "status": 200, "token": ""}
+
+    except jwt.ExpiredSignatureError:
+        return {"message": "Token Expired", "status": 401}
+    except jwt.InvalidTokenError:
+        return {"message": "Invalid token", "status": 401}
