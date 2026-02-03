@@ -1,126 +1,82 @@
-onFileChange(event: any) {
-  const target: DataTransfer = event.target as DataTransfer;
-  if (!target.files || target.files.length !== 1) {
-    this.toaster.error("Please upload a single file.");
-    if (this.takeInput1?.nativeElement) this.takeInput1.nativeElement.value = null;
-    return;
-  }
+reader.onload = (e: any) => {
+  try {
+    const bstr: string = e.target.result;
+    const wb: XLSX.WorkBook = XLSX.read(bstr, { type: 'binary' });
 
-  const file = target.files[0];
+    const wsname: string = wb.SheetNames[0];
+    const ws: XLSX.WorkSheet = wb.Sheets[wsname];
 
-  // ✅ Hard block non-Excel files (so .doc/.docx/.py all show the same error)
-  const ext = file.name.split(".").pop()?.toLowerCase();
-  if (!ext || !["xls", "xlsx"].includes(ext)) {
-    this.toaster.error("Invalid file. Please upload an Excel file (.xls/.xlsx).");
-    this.excelShowData = [];
-    this.showExcelDataFlag = false;
-    if (this.takeInput1?.nativeElement) this.takeInput1.nativeElement.value = null;
-    return;
-  }
+    // Treat the first row as headers
+    const data: any = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
-  const reader: FileReader = new FileReader();
-
-  reader.onload = (e: any) => {
-    try {
-      const bstr: string = e.target.result;
-
-      // Parse workbook
-      const wb: XLSX.WorkBook = XLSX.read(bstr, { type: "binary" });
-
-      // Validate sheet exists
-      const wsname: string = wb.SheetNames?.[0];
-      if (!wsname) throw new Error("No sheets found");
-
-      const ws: XLSX.WorkSheet = wb.Sheets?.[wsname];
-      if (!ws) throw new Error("Worksheet missing");
-
-      // Convert sheet to 2D array
-      const data: any[] = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[];
-      if (!data || !data.length || !data[0] || !Array.isArray(data[0])) {
-        throw new Error("Empty sheet");
-      }
-
-      // Validate template header
-      if ((data[0] as any[]).indexOf("GenInvo") < 0) {
-        throw new Error("Invalid template");
-      }
-
-      // ✅ Now it's safe to continue with your existing logic
-      this.showExcelDataFlag = true;
-
-      // Remove last header column (as per your original logic)
-      data[0].splice(data[0].length - 1, 1);
-
-      // Store for UI preview
-      this.excelShowData = [];
-      this.excelShowData = data;
-
-      const headers: any[] = data[0];
-      const result: Record<string, any[]> = {};
-
-      // Init arrays for each header
-      headers.forEach((header: any) => {
-        result[String(header)] = [];
-      });
-
-      // Fill column-wise values
-      data.slice(1).forEach((row: any[]) => {
-        headers.entries().forEach((entry: [number, any]) => {
-          const index = entry[0];
-          const headerName = String(entry[1]);
-          if (row && row[index] !== undefined) {
-            result[headerName].push(row[index]);
-          }
-        });
-      });
-
-      // Custom validation
-      if (this.checkInvalidExcel(result)) {
-        this.excelShowData = [];
-        this.showExcelDataFlag = false;
-        this.takeInput1.nativeElement.value = null;
-        return;
-      }
-
-      // Audit log
-      this.utilityService.createAudit(
-        "Parameter",
-        "File uploaded successfully in Synthetic data tab saved successfully.",
-        "File upload successfully in Synthetic data tab under " +
-          sessionStorage.getItem("projectName") +
-          "-" +
-          sessionStorage
-            .getItem("version")
-            ?.substring(0, sessionStorage.getItem("version")!.lastIndexOf(" ")) +
-          ".",
-        "Create"
-      );
-
-      // Build payload for API usage
-      this.apiData = {
-        projectName: sessionStorage.getItem("projectName"),
-        version: sessionStorage
-          .getItem("version")
-          ?.substring(0, sessionStorage.getItem("version")!.lastIndexOf(" ")),
-        user_id: sessionStorage.getItem("user_id"),
-        terms: result,
-        excelData: this.excelShowData,
-      };
-
-      console.log(this.apiData);
-
-      // Reset file input so the same file can be re-uploaded if needed
-      this.takeInput1.nativeElement.value = null;
-    } catch (err) {
-      // ✅ Unified error handling for doc/docx/py/garbage/excel parse issues
+    // ✅ Guard: if file is not a real excel/has no rows, treat as invalid
+    if (!data || !data.length || !data[0]) {
       this.toaster.error("Invalid file.");
       this.excelShowData = [];
-      this.showExcelDataFlag = false;
-      if (this.takeInput1?.nativeElement) this.takeInput1.nativeElement.value = null;
+      this.takeInput1.nativeElement.value = null;
       return;
     }
-  };
 
-  // Read file as binary string (matches your original approach)
-  reader.readAsBinaryString(file);
-}
+    if (data && data.length && data[0].indexOf("GenInvo") < 0) {
+      this.toaster.error("Invalid file.");
+      this.excelShowData = [];
+      this.takeInput1.nativeElement.value = null;
+      return;
+    }
+
+    this.showExcelDataFlag = true;
+    data[0].splice(data[0].length - 1, 1);
+    this.excelShowData = [];
+    this.excelShowData = data;
+
+    let headers: any;
+    headers = data[0];
+    const result: any = {};
+
+    headers.forEach((header: string) => {
+      result[header] = [];
+    });
+
+    data.slice(1).forEach((row: any) => {
+      headers.entries().forEach((header: string, index: number) => {
+        if (row[index] !== undefined) {
+          result[header[1]].push(row[index]);
+        }
+      });
+    });
+
+    if (this.checkInvalidExcel(result)) {
+      this.excelShowData = [];
+      this.takeInput1.nativeElement.value = null;
+      return;
+    }
+
+    this.utilityService.createAudit(
+      'Parameter',
+      'File uploaded successfully in Synthetic data tab saved successfully.',
+      "File upload successfully in Synthetic data tab under " +
+        sessionStorage.getItem('projectName') +
+        "-" +
+        sessionStorage.getItem('version').substring(0, sessionStorage.getItem('version').lastIndexOf(" ")) +
+        ".",
+      'Create'
+    );
+
+    this.apiData = {
+      projectName: sessionStorage.getItem("projectName"),
+      version: sessionStorage.getItem("version").substring(0, sessionStorage.getItem("version").lastIndexOf(' ')),
+      user_id: sessionStorage.getItem("user_id"),
+      terms: result,
+      excelData: this.excelShowData
+    };
+
+    console.log(this.apiData);
+    this.takeInput1.nativeElement.value = null;
+  } catch (err) {
+    // ✅ Fix: Word/docx parsing errors now show Invalid file like .py
+    this.toaster.error("Invalid file.");
+    this.excelShowData = [];
+    this.takeInput1.nativeElement.value = null;
+    return;
+  }
+};
