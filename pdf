@@ -1,98 +1,34 @@
-import jwt
-
-from datetime import timezone,timedelta
-import datetime
-import pyodbc
-import os
-SECRET_KEY = "django-insecure-k1kyxby@gn7jq!%z^$sjhvlp#g$*k=q0tf-pxb*x3*rrjui@gt"
-
-def tokengeneration(email):
-
-    payload = {"email": email, "exp": datetime.datetime.now(tz=timezone.utc)+timedelta(minutes=2400),
-            "iat": datetime.datetime.now(tz=timezone.utc),
-            }
-    token = jwt.encode(payload, SECRET_KEY, algorithm = "HS256")
-   
-
-    
-    return token
-
-
-def decodejwttoken(auth_header):
-    try:
-        
-
-        token = auth_header.split(" ")[1]
-        token = token.split('"')[0]
-        payload = jwt.decode(token, SECRET_KEY,algorithms=["HS256"])
-        email = payload.get("email")
-        exp_time = payload.get("exp")
-        current_time = datetime.datetime.now(timezone.utc)
-        totTime = getUserLastLogin(email)
-        print("TotTime")
-        print(totTime)
-        exp_time_token = datetime.datetime.fromtimestamp(exp_time, timezone.utc)
-        remaining_time = exp_time_token - current_time
-        print("totTime type:", type(totTime), "val: ", totTime)
-        if(totTime >= 720):
-            return {"message": "Token Expired","status":401}
-    
-        # print('remaining time==>',remaining_time)
-        if (remaining_time.total_seconds())/60 <= 5 :
-            
-            token = tokengeneration(email)
-
-
-            
-            return {"message":email,"status":200,"token":token}
-            
-        return {"message":email,"status":200,"token":""}
-
-        # if not email:
-        #     raise AuthenticationFailed("authtication failed")
-        # else:
-    except jwt.ExpiredSignatureError:
-        
-        return {"message": "Token Expired","status":401}
-    except jwt.InvalidTokenError:
-       
-        return {"message": "Invalid token","status":401}
-    
-
-# from fastapi import FastAPI
-
-# app = FastAPI()
-
-# Database connection settings for local
-# server = '192.168.2.13'
-# database = 'DATALUTION_DEV'
-# username = 'dt_temp_user'
-# password = 'xh3hbuefumNJEBFJb4g7f:[202125'
-
-
-# Database connection settings for test/QA/dev environment
-server = os.getenv('SQL_URL')
-database =  os.getenv('SQL_DB')
-username = os.getenv('SQL_USER')
-password =  os.getenv('SQL_PASS')
-
-
-driver = '{ODBC Driver 17 for SQL Server}'
-
-# Connection string
-conn_str = f'DRIVER={driver};SERVER={server};DATABASE={database};UID={username};PWD={password}'
-
-def getUserLastLogin(email):
-    try:
-        with pyodbc.connect(conn_str) as conn:
-            cursor = conn.cursor()
-            # Call the stored procedure
-            cursor.execute("{CALL usp_DL_USER_LAST_LOGIN_GET (?)}", (email))
-            result = cursor.fetchall()
-            # Convert result to list of dicts
-            columns = [column[0] for column in cursor.description]
-            data = [dict(zip(columns, row)) for row in result]
-            print('ok==>',data[0]["LAST_LOGIN_TM"])
-            return data[0]["LAST_LOGIN_TM"]
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+layout.component.ts:290 ERROR Http failure response for http://localhost:4200/api/datafetch/versionOfUploadedDocuments/?projectName=null&user_id=95: 504 Gateway Timeout
+load		
+versionOfUploadedDocument	@	layout.component.ts:290
+(anonymous)	@	layout.component.ts:83
+load		
+(anonymous)	@	layout.component.ts:78
+ngOnInit	@	layout.component.ts:51
+Promise.then		
+webpackJsonpCallback	@	bootstrap:25
+(anonymous)	@	dashboard-dashboard-module.js:1
+Show 202 more frames
+core.js:4197 ERROR 
+Error: ExpressionChangedAfterItHasBeenCheckedError: Expression has changed after it was checked. Previous value: 'false'. Current value: 'true'.
+    at throwErrorIfNoChangesMode (core.js:5468:1)
+    at bindingUpdated (core.js:13013:1)
+    at Module.ɵɵproperty (core.js:13808:1)
+    at NgxSpinnerComponent_Template (ngx-spinner.js:316:26)
+    at executeTemplate (core.js:7303:1)
+    at refreshView (core.js:7172:1)
+    at refreshComponent (core.js:8326:1)
+    at refreshChildComponents (core.js:6965:1)
+    at refreshView (core.js:7222:1)
+    at refreshComponent (core.js:8326:1)
+Show 29 more frames
+createproject.component.ts:97 
+ GET http://localhost:4200/api/datafetch/getUserTableByClientid/ 500 (Internal Server Error)
+getProjectLeadList	@	createproject.component.ts:97
+ngOnInit	@	createproject.component.ts:33
+Show 67 more frames
+createproject.component.ts:97 ERROR Http failure response for http://localhost:4200/api/datafetch/getUserTableByClientid/: 500 Internal Server Error
+load		
+getProjectLeadList	@	createproject.component.ts:97
+ngOnInit	@	createproject.component.ts:33
+Show 135 more frames
