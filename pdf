@@ -1,50 +1,25 @@
-def decodejwttoken(auth_header):
-    try:
-        token = auth_header.split(" ")[1]
-        token = token.split('"')[0]
+[HPM] Error occurred while trying to proxy request /api/datafetch/versionOfUploadedDocuments/?projectName=test_vm&user_id=95 from localhost:4200 to http://localhost:8001 (ECONNRESET) (https://nodejs.org/api/errors.html#errors_common_system_errors)
+[HPM] Error occurred while trying to proxy request /api/datafetch/GetProfileDetails/?user_id=95 from localhost:4200 to http://localhost:8001 (ECONNRESET) (https://nodejs.org/api/errors.html#errors_common_system_errors)
+[HPM] GET /api/datafetch/getJSONContent/ -> http://localhost:8001
+[HPM] GET /api/datafetch/versionOfUploadedDocuments/?projectName=test_vm&user_id=95 -> http://localhost:8001
+[HPM] GET /api/datafetch/previousUploadedDocuments/?projectName=test_vm&version=Version1%20%5BNew%5D&user_id=95 -> http://localhost:8001
+[HPM] GET /api/datafetch/getJSONContent/ -> http://localhost:8001
+[HPM] GET /api/datafetch/GetProfileDetails/?user_id=95 -> http://localhost:8001
+[HPM] GET /api/datafetch/versionOfUploadedDocuments/?projectName=test_vm&user_id=95 -> http://localhost:8001
+[HPM] GET /api/datafetch/getJSONContent/ -> http://localhost:8001
+[HPM] POST /oapi/filemanager/Upload/ -> http://10.15.1.228:6001
+[HPM] Error occurred while trying to proxy request /oapi/filemanager/Upload/ from localhost:4200 to http://10.15.1.228:6001 (ECONNREFUSED) (https://nodejs.org/api/errors.html#errors_common_system_errors)
+[HPM] GET /api/datafetch/getJSONContent/ -> http://localhost:8001
+[HPM] GET /api/datafetch/versionOfUploadedDocuments/?projectName=test_vm&user_id=95 -> http://localhost:8001
+[HPM] GET /api/datafetch/previousUploadedDocuments/?projectName=test_vm&version=Version1%20%5BNew%5D&user_id=95 -> http://localhost:8001
+[HPM] GET /api/datafetch/getJSONContent/ -> http://localhost:8001
+[HPM] GET /api/datafetch/GetProfileDetails/?user_id=95 -> http://localhost:8001
+[HPM] GET /api/datafetch/versionOfUploadedDocuments/?projectName=test_vm&user_id=95 -> http://localhost:8001
+[HPM] GET /api/datafetch/getJSONContent/ -> http://localhost:8001
+[HPM] Error occurred while trying to proxy request /api/datafetch/versionOfUploadedDocuments/?projectName=test_vm&user_id=95 from localhost:4200 to http://localhost:8001 (ECONNRESET) (https://nodejs.org/api/errors.html#errors_common_system_errors)
+[HPM] Error occurred while trying to proxy request /api/datafetch/GetProfileDetails/?user_id=95 from localhost:4200 to http://localhost:8001 (ECONNRESET) (https://nodejs.org/api/errors.html#errors_common_system_errors)
+[HPM] Error occurred while trying to proxy request /api/datafetch/previousUploadedDocuments/?projectName=test_vm&version=Version1%20%5BNew%5D&user_id=95 from localhost:4200 to http://localhost:8001 (ECONNRESET) (https://nodejs.org/api/errors.html#errors_common_system_errors)
+[HPM] Error occurred while trying to proxy request /api/datafetch/versionOfUploadedDocuments/?projectName=test_vm&user_id=95 from localhost:4200 to http://localhost:8001 (ECONNRESET) (https://nodejs.org/api/errors.html#errors_common_system_errors)
+[HPM] POST /oapi/filemanager/Upload/ -> http://10.15.1.228:6001
+[HPM] Error occurred while trying to proxy request /oapi/filemanager/Upload/ from localhost:4200 to http://10.15.1.228:6001 (ECONNREFUSED) (https://nodejs.org/api/errors.html#errors_common_system_errors)
 
-        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-        email = payload.get("email")
-        exp_time = payload.get("exp")
-
-        current_time = datetime.datetime.now(timezone.utc)
-
-        totTime = getUserLastLogin(email)
-        print("TotTime:", totTime, "type:", type(totTime))
-
-        # ✅ If DB failed, don't crash. Return a clean response.
-        if isinstance(totTime, dict) and totTime.get("success") is False:
-            return {
-                "message": "Auth DB unavailable (last login check failed)",
-                "status": 503,
-                "details": totTime.get("error"),
-            }
-
-        # ✅ Normalize totTime to a number of minutes
-        # If stored procedure returns datetime, compute minutes since that time.
-        if isinstance(totTime, datetime.datetime):
-            mins_since_login = (current_time - totTime).total_seconds() / 60.0
-        else:
-            # If it's already numeric (int/float/decimal/str), convert safely
-            try:
-                mins_since_login = float(totTime)
-            except Exception:
-                mins_since_login = 0.0
-
-        if mins_since_login >= 720:
-            return {"message": "Token Expired", "status": 401}
-
-        # existing JWT exp logic
-        exp_time_token = datetime.datetime.fromtimestamp(exp_time, timezone.utc)
-        remaining_time = exp_time_token - current_time
-
-        if (remaining_time.total_seconds() / 60) <= 5:
-            new_token = tokengeneration(email)
-            return {"message": email, "status": 200, "token": new_token}
-
-        return {"message": email, "status": 200, "token": ""}
-
-    except jwt.ExpiredSignatureError:
-        return {"message": "Token Expired", "status": 401}
-    except jwt.InvalidTokenError:
-        return {"message": "Invalid token", "status": 401}
