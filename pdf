@@ -1,154 +1,25 @@
-import { Component, OnInit, OnChanges } from '@angular/core';
-import { Routes, RouterModule, Router } from '@angular/router';
-import Swal from 'sweetalert2';
-import { ScraperService } from './scraper.service';
+import { async, ComponentFixture, TestBed } from '@angular/core/testing';
 
-@Component({
-  selector: 'app-protocolscraper',
-  templateUrl: './protocolscraper.component.html',
-  styleUrls: ['./protocolscraper.component.scss']
-})
-export class ProtocolscraperComponent implements OnInit, OnChanges {
+import { ProtocolscraperComponent } from './protocolscraper.component';
 
-  scrapedData:any;
-  constructor(private _router:Router,
-        private scraperService:ScraperService) { }
+describe('ProtocolscraperComponent', () => {
+  let component: ProtocolscraperComponent;
+  let fixture: ComponentFixture<ProtocolscraperComponent>;
 
-  ngOnInit(): void {
-    var span = document.createElement("span");
-    span.innerHTML = "Testno  sporocilo za objekt <b>test</b>";
-    // Swal.fire({
-    //   customClass: {
-    //     title: 'swal2-title'
-    //   },
-    //   title: '',
-    //   html: ` <b>Note: </b> Protocol, ALS, and CRF CG files have been uploaded 
-    //   and scraped for Test Data Generation parameters. Please review and confirm the settings. 
-    //   Parameters can be entered directly or selected from within the documents themselves. 
-    //   Please provide more information for any overridden/entered values as this may 
-    //   enhance our ability to better locate the correct parameters/settings moving forward.`,
-    //   showCancelButton: false,
-    //   confirmButtonText: 'Ok',
-    //   //cancelButtonText: 'No',
-    //   cancelButtonColor: "#ccc",
-    //   confirmButtonColor: "#b2dd4e",
-    // })
-    //   .then((confir) => {
-    //     if (confir.value) {
-    //      // this._router.navigate(['/protocolscraper'])
-    //     } else {
-    //       console.log('fail')
-    //     }
-    //   })
-
-    const obj = {
-      csr_file:'test.pdf'
-    }
-
-      this.scraperService.getScraped(obj).subscribe(
-        (data) =>{
-            this.scrapedData = data;
-      })
-
-  }
-
-  ngOnChanges(){
-    const ageMaxCtrl = document.getElementById('maxAge') as HTMLElement;
-    ageMaxCtrl.style.visibility = 'hidden';
-  }
-
-  get transformedBody() {
-    return 
-    // Object.keys(this.scrapedData);
-  }
-
-  onParameter(){
-    Swal.fire({
-      customClass: {
-        title: 'swal2-title'
-      },
-      title: '',
-      text: `It appears that you have confirmed all scraped parameters. 
-      Would you like to review all other parameters in the Test Data Generation Plan?`,
-      showCancelButton: true,
-      confirmButtonText: 'Yes',
-      cancelButtonText: 'No',
-      cancelButtonColor: "#ccc",
-      confirmButtonColor: "#b2dd4e",
+  beforeEach(async(() => {
+    TestBed.configureTestingModule({
+      declarations: [ ProtocolscraperComponent ]
     })
-      .then((confir) => {
-        if (confir.value) {
-          sessionStorage.setItem('scrapedValues', JSON.stringify(this.scrapedData));
-          this._router.navigate(['/parameter'])
-        } else {
-          console.log('fail')
-        }
-      })
-  }
+    .compileComponents();
+  }));
 
-  onAgeMax(){
-    const ageMaxCtrl = document.getElementById('maxAge') as HTMLElement;
-    ageMaxCtrl.style.visibility = 'visible';
-    const maxAge = document.getElementById('ageMaxTd') as HTMLElement;
-    maxAge.innerText = 'SET BY AI';
-  }
+  beforeEach(() => {
+    fixture = TestBed.createComponent(ProtocolscraperComponent);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+  });
 
-  onGenderPopup(){
-    Swal.fire({
-      customClass: {
-        title: 'swal2-title'
-      },
-      title: '',
-      text: `97% of projects like this one have included both Male and Female subjects at approximately a 50% split. 
-      Would you like to adopt this same setting for this J&J Demo project?`,
-      showCancelButton: true,
-      confirmButtonText: 'Yes',
-      cancelButtonText: 'No',
-      cancelButtonColor: "#ccc",
-      confirmButtonColor: "#b2dd4e",
-    })
-      .then((confir) => {
-        if (confir.value) {
-          const gender = document.getElementById('gender') as HTMLInputElement;
-          gender.value = 'Both';
-          const genderAI = document.getElementById('genderTd') as HTMLElement;
-          genderAI.innerText = 'SET BY AI';
-          if(this.scrapedData.ageEnd == 'NA'){
-            this.scrapedData.ageEnd = '87';
-            const ageEndAI = document.getElementById('ageEnd') as HTMLElement;
-          ageEndAI.innerText = 'SET BY AI';
-          }
-          
-         this.genderPropse();
-        } else {
-          console.log('fail')
-        }
-      })
-
-  }
-
-  genderPropse(){
-    Swal.fire({
-      customClass: {
-        title: 'swal2-title'
-      },
-      title: '',
-      text: `To minimize messages and clicks, would you like to adopt AI-recommendations
-       for any remaining unassigned parameter settings?
-       If not, we will continue to ask you for each parameter.`,
-      showCancelButton: true,
-      confirmButtonText: 'Yes',
-      cancelButtonText: 'No',
-      cancelButtonColor: "#ccc",
-      confirmButtonColor: "#b2dd4e",
-    })
-      .then((confir) => {
-        if (confir.value) {
-          this.onParameter();
-        } else {
-          console.log('fail')
-        }
-      })
-  }
-
-}
+  it('should create', () => {
+    expect(component).toBeTruthy();
+  });
+});
