@@ -1,118 +1,92 @@
-# tests/conftest.py
-import types
-
-class FakeStyle:
-    def __init__(self, name="Normal"):
-        self.name = name
-
-class FakeParagraph:
-    def __init__(self, text, style_name="Normal"):
-        self.text = text
-        self.style = FakeStyle(style_name)
-        # minimal ._p / ._element used by get_list_numbering; for tests that
-        # don't touch numbering, we can keep it as simple placeholders.
-        self._p = types.SimpleNamespace(pPr=None)
-        self._element = types.SimpleNamespace(pPr=None)
-
-class FakeCell:
-    def __init__(self, text):
-        self.text = text
-        self._tc = types.SimpleNamespace(iterchildren=lambda: iter([]))
-
-class FakeRow:
-    def __init__(self, cells):
-        self.cells = [FakeCell(c) for c in cells]
-
-class FakeTable:
-    def __init__(self, rows):
-        self.rows = [FakeRow(r) for r in rows]
-
-class FakeDoc:
-    def __init__(self, paragraphs=None, tables=None, rels=None):
-        self.paragraphs = paragraphs or []
-        self.tables = tables or []
-        # .part.rels used in image_text_extractor
-        self.part = types.SimpleNamespace(rels=rels or {})
-
-def make_fake_doc(paragraph_texts, paragraph_styles=None, tables=None):
-    paragraph_styles = paragraph_styles or ["Normal"] * len(paragraph_texts)
-    paragraphs = [FakeParagraph(t, s) for t, s in zip(paragraph_texts, paragraph_styles)]
-    return FakeDoc(paragraphs=paragraphs, tables=tables or [])
-
-
-
-
-# tests/test_extract_ratio.py
+# tests/test_extract_participants.py
 from utils import extract as ex
 
-def test_ratio_extractor_finds_ratio(monkeypatch):
+def test_participant_count_extractor_calls_candidate(monkeypatch):
     fake_doc = type("D", (), {})()
     fake_doc.paragraphs = [
-        type("P", (), {"text": "Randomization ratio is 2:1 for treatment vs placebo", "style": type("S", (), {"name": "Normal"})()})(),
-        type("P", (), {"text": "", "style": type("S", (), {"name": "Normal"})()})(),
+        type("P", (), {"text": "1 NUMBER OF PARTICIPANTS", "style": type("S", (), {"name": "Normal"})()})(),
+        type("P", (), {"text": "A total of 120 participants will be enrolled.", "style": type("S", (), {"name": "Normal"})()})(),
+        type("P", (), {"text": "2 OBJECTIVES", "style": type("S", (), {"name": "Heading 1"})()})(),
     ]
-
     monkeypatch.setattr(ex, "Document", lambda _: fake_doc)
 
-    out = ex.ratio_extractor("x.docx")
-    assert out[0]["value"] == "2:1"
-    assert out[0]["score"] > 0
+    called = {}
+    def fake_candidate(text):
+        called["text"] = text
+        return {"total_participants": {"value": 120}}
+
+    monkeypatch.setattr(ex, "exracted_participants_count_canditate", fake_candidate)
+
+    out = ex.participant_count_extractor("x.docx")
+    assert out["total_participants"]["value"] == 120
+    assert "120 participants" in called["text"]
 
 
 
 
 
-# tests/test_extract_amendment.py
-from utils import extract as ex
-from tests.conftest import FakeTable
 
-def test_amendment_date_extractor_picks_latest(monkeypatch):
-    tables = [
-        FakeTable(rows=[
-            ["Amendment 1", "10 Jan 2023"],
-            ["Amendment 2", "05 Feb 2024"],
-        ]),
-        FakeTable(rows=[
-            ["Amendment 2", "06 Feb 2024"],  # later date, same amendment
-        ])
-    ]
-
-    fake_doc = type("D", (), {"tables": tables})()
-    monkeypatch.setattr(ex, "Document", lambda _: fake_doc)
-
-    out = ex.amendment_date_extractor("x.docx")
-    assert out["amendment"] == 2
-    assert out["date"] == "06 February 2024"
-
-
-
-
-
-# tests/test_extract_age.py
+# tests/test_extract_mh_cm_ae.py
 from utils import extract as ex
 
-class FakePara:
-    def __init__(self, text):
-        self.text = text
+def test_mh_cm_ae_extractor_filters_exclusion(monkeypatch):
+    monkeypatch.setattr(ex, "extract_sections", lambda _: ("FULL TEXT", "EXCLUSION TEXT"))
 
-def test_age_extractor_range(monkeypatch):
-    # Simulate: Inclusion Criteria section then age sentence then Exclusion Criteria
-    blocks = [
-        FakePara("Inclusion Criteria"),
-        FakePara("Subjects must be 18 to 55 years of age."),
-        FakePara("Exclusion Criteria"),
-    ]
+    def fake_extract_entities(text, model, entity_type_filter=None):
+        if text == "FULL TEXT" and "biomedical" in model:
+            return ["aspirin", "metformin"]
+        if text == "EXCLUSION TEXT" and "biomedical" in model:
+            return ["aspirin"]
+        if text == "FULL TEXT":
+            return ["diabetes"]
+        if text == "EXCLUSION TEXT":
+            return []
+        return []
 
-    monkeypatch.setattr(ex, "Document", lambda _: object())
-    monkeypatch.setattr(ex, "iter_block_items", lambda doc: blocks)
+    monkeypatch.setattr(ex, "extract_entities", fake_extract_entities)
 
-    out = ex.age_extractor("x.docx")
-    assert out["min_age"] == 18
-    assert out["max_age"] == 55
-    assert "18 to 55" in out["full_criteria_sentence"]
+    out = ex.mh_cm_ae_extractor("x.docx")
+    assert out["medications"] == ["metformin"]
+    assert out["diseases"] == ["diabetes"]
 
 
 
+
+# tests/test_api_routes.py
+from fastapi.testclient import TestClient
+import api  # your root-level api.py
+
+client = TestClient(api.app)
+
+def test_extract_title_route(monkeypatch):
+    async def fake_prepare(path):
+        return "converted.docx"
+
+    def fake_title_extractor(path):
+        assert path == "converted.docx"
+        return "An Open-label Randomized Study ..."
+
+    monkeypatch.setattr(api, "prepare_docx_path", fake_prepare)
+    monkeypatch.setattr(api, "title_extractor", fake_title_extractor)
+
+    resp = client.post("/extract/title", json={"file_path": "input.pdf"})
+    assert resp.status_code == 200
+    assert "title" in resp.json()
+    assert resp.json()["title"].startswith("An Open-label")
+
+def test_extract_age_route(monkeypatch):
+    async def fake_prepare(path):
+        return "converted.docx"
+
+    def fake_age_extractor(path):
+        return {"full_criteria_sentence": "18 to 55 years", "min_age": 18, "max_age": 55}
+
+    monkeypatch.setattr(api, "prepare_docx_path", fake_prepare)
+    monkeypatch.setattr(api, "age_extractor", fake_age_extractor)
+
+    resp = client.post("/extract/age", json={"file_path": "x.pdf"})
+    assert resp.status_code == 200
+    assert resp.json()["age"]["min_age"] == 18
 
 
 
