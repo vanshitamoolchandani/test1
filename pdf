@@ -1,25 +1,546 @@
-import { async, ComponentFixture, TestBed } from '@angular/core/testing';
+# CCI SearchX - Complete Architecture Report
 
-import { ProtocolscraperComponent } from './protocolscraper.component';
+## Executive Summary
 
-describe('ProtocolscraperComponent', () => {
-  let component: ProtocolscraperComponent;
-  let fixture: ComponentFixture<ProtocolscraperComponent>;
+**CCI SearchX** is a FastAPI-based Python application designed for **Confidential Commercial Information (CCI) extraction** from pharmaceutical documents. It supports multiple extraction modes including web scraping, PDF document analysis, and Word document processing, with both rule-based and LLM-powered extraction pipelines.
 
-  beforeEach(async(() => {
-    TestBed.configureTestingModule({
-      declarations: [ ProtocolscraperComponent ]
-    })
-    .compileComponents();
-  }));
+---
 
-  beforeEach(() => {
-    fixture = TestBed.createComponent(ProtocolscraperComponent);
-    component = fixture.componentInstance;
-    fixture.detectChanges();
-  });
+## 1. High-Level Architecture Overview
 
-  it('should create', () => {
-    expect(component).toBeTruthy();
-  });
-});
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              CCI SearchX Application                             │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                  │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐  │
+│  │   FastAPI    │───▶│   Routes     │───▶│   Services   │───▶│  Extractors  │  │
+│  │   (main.py)  │    │ (web_searchx)│    │ (google,etc) │    │ (LLM/Rules)  │  │
+│  └──────────────┘    └──────────────┘    └──────────────┘    └──────────────┘  │
+│         │                   │                   │                   │           │
+│         ▼                   ▼                   ▼                   ▼           │
+│  ┌──────────────────────────────────────────────────────────────────────────┐  │
+│  │                        Core Infrastructure                                │  │
+│  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────────────┐ │  │
+│  │  │ Config  │  │Database │  │  LLM    │  │ Logger  │  │ Azure Services  │ │  │
+│  │  │ Manager │  │  Util   │  │ Config  │  │         │  │ (IMDS/KeyVault) │ │  │
+│  │  └─────────┘  └─────────┘  └─────────┘  └─────────┘  └─────────────────┘ │  │
+│  └──────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                  │
+│  ┌──────────────────────────────────────────────────────────────────────────┐  │
+│  │                        LLM Pipeline (llm_poc/)                            │  │
+│  │  ┌─────────────────────────────────────────────────────────────────────┐ │  │
+│  │  │                    PDF Native Pipeline                               │ │  │
+│  │  │  Stage 1A ──▶ Stage 1B ──▶ Stage 2 ──▶ Stage 3 ──▶ Results         │ │  │
+│  │  │  (Ingest)    (Understand)  (Extract)   (Web Match)                  │ │  │
+│  │  └─────────────────────────────────────────────────────────────────────┘ │  │
+│  └──────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                  │
+│  ┌──────────────────────────────────────────────────────────────────────────┐  │
+│  │                        Rule Engine (rule_engine/)                         │  │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────────────┐  │  │
+│  │  │   Engine    │  │   Models    │  │         JSON Rules              │  │  │
+│  │  │ (evaluator) │  │(match_reason│  │ (50+ category-specific rules)   │  │  │
+│  │  └─────────────┘  └─────────────┘  └─────────────────────────────────┘  │  │
+│  └──────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           External Dependencies                                  │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐│
+│  │  Azure AI   │  │  MSSQL DB   │  │  PDFX API   │  │  CIS API (cisx)        ││
+│  │ (ai-xchange)│  │             │  │             │  │  (inclusion/exclusion)  ││
+│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────────────────┘│
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 2. Directory Structure & File Purposes
+
+### 2.1 Application Core (`app/`)
+
+| File/Directory | Purpose |
+|----------------|---------|
+| `main.py` | FastAPI application entry point, lifespan management, WebDriver initialization |
+| `models.py` | Pydantic models for API requests (SearchParams, WordPluginPayload, SemanticParams) |
+| `utils.py` | Core utilities: PDF text extraction, sentence processing, NER, regex matching |
+| `utils_semantic.py` | Semantic matching utilities using SBERT |
+| `word_html.py` | Word document HTML parsing and page building |
+
+### 2.2 API Layer (`app/api/`)
+
+| File | Purpose |
+|------|---------|
+| `main.py` | API router aggregation |
+| `routes/web_searchx.py` | **Main API endpoints**: `/search-drug-cci`, `/cci-semantic-search`, `/cci-inclusion-scan`, `/cci-search-text` |
+
+### 2.3 Category Extraction (`app/api/categories/`)
+
+| File | Purpose |
+|------|---------|
+| `extracts.py` | **Core extraction logic**: Rule-based + LLM extraction, 50+ category functions |
+| `category_selection.py` | Category filtering and selection logic |
+| `llm_extractor.py` | LLM-based extraction using ai-xchange |
+| `custom_portals.py` | Legacy portal scrapers (clinicaltrials.gov, etc.) |
+| `custom_portals_new.py` | Updated portal scrapers (FDA, EMA, Lilly, Nature) |
+| `asset_category_service.py` | Asset-based category resolution |
+
+### 2.4 Core Infrastructure (`app/core/`)
+
+| File | Purpose |
+|------|---------|
+| `config.py` | Settings management with Azure integration |
+| `azure_config.py` | Azure IMDS, App Configuration, Key Vault integration |
+| `database_util.py` | MSSQL database operations (pyodbc) |
+| `llm_config.py` | Per-client LLM configuration from `CCI_LLM_CONFIG` table |
+| `constants.py` | Regex patterns, keywords, category mappings |
+| `logger.py` | Logging configuration |
+| `selenium_web_driver.py` | Selenium WebDriver management for web scraping |
+| `performance_summary.py` | Performance metrics collection |
+
+### 2.5 Services (`app/services/`)
+
+| File | Purpose |
+|------|---------|
+| `google_service.py` | Google Custom Search API integration |
+| `word_semantic_service.py` | Word document semantic matching |
+| `notification_progress.py` | Progress tracking for long-running operations |
+| `requests.py` | HTTP request utilities |
+
+---
+
+## 3. LLM Pipeline Architecture (`llm_poc/pdf_pipeline/`)
+
+The PDF-native pipeline is the **most sophisticated extraction system**, using a 4-stage approach:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        PDF Native Pipeline Flow                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌──────────────┐     ┌──────────────┐     ┌──────────────┐                │
+│  │   PDF File   │     │ withStyles   │     │   Category   │                │
+│  │              │     │    .json     │     │    List      │                │
+│  └──────┬───────┘     └──────┬───────┘     └──────┬───────┘                │
+│         │                    │                    │                         │
+│         ▼                    ▼                    │                         │
+│  ┌─────────────────────────────────────┐         │                         │
+│  │         STAGE 1A: Ingestion         │         │                         │
+│  │  • Upload PDF (visual context)      │         │                         │
+│  │  • Upload JSON (line data)          │         │                         │
+│  │  • Build line number mapping        │         │                         │
+│  │  Output: response_id for chaining   │         │                         │
+│  └──────────────┬──────────────────────┘         │                         │
+│                 │                                 │                         │
+│                 ▼                                 │                         │
+│  ┌─────────────────────────────────────┐         │                         │
+│  │      STAGE 1B: Understanding        │         │                         │
+│  │  • Document type identification     │         │                         │
+│  │  • Section → Category mapping       │         │                         │
+│  │  • Table structure analysis         │         │                         │
+│  │  • Exclusion zone identification    │         │                         │
+│  │  Output: Document comprehension     │         │                         │
+│  └──────────────┬──────────────────────┘         │                         │
+│                 │                                 │                         │
+│                 ▼                                 ▼                         │
+│  ┌─────────────────────────────────────────────────────┐                   │
+│  │              STAGE 2: Extraction                     │                   │
+│  │  • Category batching (3 categories per batch)       │                   │
+│  │  • Parallel batch processing                        │                   │
+│  │  • Line number-based output                         │                   │
+│  │  • Auto-retry with token increase                   │                   │
+│  │  Output: {category: [{pageNumber, cciData, lines}]} │                   │
+│  └──────────────┬──────────────────────────────────────┘                   │
+│                 │                                                           │
+│                 ▼                                                           │
+│  ┌─────────────────────────────────────────────────────┐                   │
+│  │           STAGE 3: Web Matching                      │                   │
+│  │  • SBERT pre-filter (≥0.92 direct, 0.5-0.92 LLM)   │                   │
+│  │  • CIS API: webExtracts, exclusiveCcis, inclusiveCcis│                  │
+│  │  • LLM final decision for candidates                │                   │
+│  │  Output: foundInWeb, isExcluded, isIncluded flags   │                   │
+│  └──────────────┬──────────────────────────────────────┘                   │
+│                 │                                                           │
+│                 ▼                                                           │
+│  ┌─────────────────────────────────────────────────────┐                   │
+│  │              Final Output                            │                   │
+│  │  • Hydrated text + bounding boxes                   │                   │
+│  │  • Performance report (JSON)                        │                   │
+│  │  • CCI JSON with quads for highlighting             │                   │
+│  └─────────────────────────────────────────────────────┘                   │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 3.1 Pipeline Files
+
+| File | Purpose |
+|------|---------|
+| `pipeline.py` | **Main orchestrator**: `run_pdf_native_pipeline()`, chunked processing for large docs |
+| `client.py` | `AzureResponsesClient`: ai-xchange API communication, retry logic, request chaining |
+| `config.py` | Pipeline configuration builder from LLM config |
+| `ingestion.py` | Stage 1A: PDF + JSON upload, decrypt API integration |
+| `document_understanding.py` | Stage 1B: Comprehensive document analysis prompt |
+| `extraction_v2.py` | Stage 2: Category extraction with batching, deduplication |
+| `web_matching.py` | Stage 3: SBERT + LLM matching against CIS API data |
+| `line_data_builder.py` | Line number → text + bbox hydration |
+| `models.py` | Data classes: IngestionResult, ExtractionItem, PipelineResult |
+| `results_handler.py` | Intermediate file saving, CCI JSON generation |
+| `performance_report.py` | Performance metrics tracking and reporting |
+| `optimized_prompt.py` | Prompt building for extraction |
+
+---
+
+## 4. Rule Engine Architecture (`rule_engine/`)
+
+The rule engine provides **deterministic, auditable extraction** using JSON-based rules:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      Rule Engine Flow                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────────┐     ┌──────────────┐     ┌──────────────┐    │
+│  │   Sentence   │────▶│    Rule      │────▶│   Match      │    │
+│  │    Input     │     │  Evaluator   │     │   Result     │    │
+│  └──────────────┘     └──────────────┘     └──────────────┘    │
+│                              │                                   │
+│                              ▼                                   │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │                    JSON Rule Structure                       ││
+│  │  {                                                           ││
+│  │    "category": "dosage",                                     ││
+│  │    "conditions": [                                           ││
+│  │      {"type": "keyword", "values": ["mg", "dose"]},         ││
+│  │      {"type": "regex", "pattern": "\\d+\\s*mg"},            ││
+│  │      {"type": "ner", "entity": "CHEMICAL"}                  ││
+│  │    ],                                                        ││
+│  │    "logic": "AND"                                            ││
+│  │  }                                                           ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 4.1 Rule Files (50+ categories)
+
+Located in `rule_engine/rules/`:
+- `dosage.json`, `dosageRegimen.json`, `regimen.json`
+- `pkpdModelsSimulations.json`, `statisticalMethods.json`
+- `manufacturersInfo.json`, `facilitiesInfo.json`
+- `mechanismOfAction.json`, `bioanalyticalMethods.json`
+- And 40+ more category-specific rules
+
+---
+
+## 5. API Endpoints
+
+### 5.1 Main Endpoints (`/api/v1/`)
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/search-drug-cci` | POST | **Primary endpoint**: Web/PDF/Word CCI extraction |
+| `/cci-semantic-search` | POST | Semantic matching on CCI assets |
+| `/cci-word-semantic-search` | POST | Word document semantic matching |
+| `/cci-inclusion-scan` | POST | PDF scan against CCI inclusion/exclusion lists |
+| `/cci-search-text` | POST | Extract categories from raw text |
+| `/health` | GET | Health check |
+
+### 5.2 Search Modes
+
+| Mode | Description | Pipeline Used |
+|------|-------------|---------------|
+| `google` | Web search via Google API | Rule-based + Portal scrapers |
+| `portals` | Direct portal scraping | Custom portal handlers |
+| `pdf` | PDF document scan | PDF-native or Rule-based |
+| `word` | Word document scan | LLM or Rule-based |
+
+### 5.3 Extraction Flags
+
+| Flag | Effect |
+|------|--------|
+| `useLlmExtraction=true` | Use LLM-based extraction (smart chunker) |
+| `useCompactProtocol=true` | Fast scan pipeline (JSON only, no PDF) |
+| `useDenseToken=true` | **PDF-native pipeline** (PDF + JSON, comprehensive) |
+| `usePdfNative=true` | Alias for Dense Token mode |
+
+---
+
+## 6. Configuration System
+
+### 6.1 Configuration Priority
+
+```
+1. Azure IMDS (VM Tags)
+   └── ENV_ID, AZURE_APP_CONFIG_URL, AZURE_KEYVAULT_URL
+
+2. Azure App Configuration
+   └── {ENV_ID}-cci-searchx (JSON key)
+
+3. Azure Key Vault
+   └── {ENV_ID}-cci-searchx-secrets (JSON key)
+
+4. .env file (local development fallback)
+```
+
+### 6.2 Key Configuration Values
+
+| Setting | Source | Purpose |
+|---------|--------|---------|
+| `SERVER`, `DATABASE`, `DB_USER`, `PASSWORD` | Key Vault | MSSQL connection |
+| `API_KEY`, `CX_ID` | Key Vault | Google Search API |
+| `PDFX_API_BASE_URL` | App Config | PDF processing service |
+| `CISX_API_BASE_URL` | App Config | CCI inclusion/exclusion API |
+
+### 6.3 LLM Configuration (Database)
+
+From `CCI_LLM_CONFIG` table:
+
+| Field | Default | Purpose |
+|-------|---------|---------|
+| `parsing_model` | gpt-5.2 | Model for document parsing |
+| `extraction_model` | gpt-5.2 | Model for category extraction |
+| `table_expand_model` | gpt-5.4-nano | Model for table expansion |
+| `parsing_max_concurrency` | 15 | Concurrent parsing calls |
+| `extraction_max_concurrency` | 3 | Concurrent extraction calls |
+| `ai_xchange_base_url` | cb-ai-xchange.geninvo.com | AI gateway URL |
+
+---
+
+## 7. Data Flow Diagrams
+
+### 7.1 PDF Document Scan (Dense Token Mode)
+
+```
+User Request                    CCI SearchX                      External Services
+     │                              │                                   │
+     │  POST /search-drug-cci       │                                   │
+     │  {searchMode: "pdf",         │                                   │
+     │   useDenseToken: true}       │                                   │
+     │─────────────────────────────▶│                                   │
+     │                              │                                   │
+     │                              │  1. Load PDF + withStyles.json    │
+     │                              │─────────────────────────────────▶ │ PDFX API
+     │                              │◀─────────────────────────────────│
+     │                              │                                   │
+     │                              │  2. Stage 1A: Upload to LLM      │
+     │                              │─────────────────────────────────▶ │ ai-xchange
+     │                              │◀─────────────────────────────────│
+     │                              │                                   │
+     │                              │  3. Stage 1B: Document Analysis  │
+     │                              │─────────────────────────────────▶ │ ai-xchange
+     │                              │◀─────────────────────────────────│
+     │                              │                                   │
+     │                              │  4. Stage 2: Extract Categories  │
+     │                              │─────────────────────────────────▶ │ ai-xchange
+     │                              │◀─────────────────────────────────│
+     │                              │                                   │
+     │                              │  5. Stage 3: Web Matching        │
+     │                              │─────────────────────────────────▶ │ CIS API
+     │                              │◀─────────────────────────────────│
+     │                              │                                   │
+     │  Response: {searchResults}   │                                   │
+     │◀─────────────────────────────│                                   │
+```
+
+### 7.2 Web Search Flow
+
+```
+User Request                    CCI SearchX                      External Services
+     │                              │                                   │
+     │  POST /search-drug-cci       │                                   │
+     │  {searchMode: "google"}      │                                   │
+     │─────────────────────────────▶│                                   │
+     │                              │                                   │
+     │                              │  1. Google Search                 │
+     │                              │─────────────────────────────────▶ │ Google API
+     │                              │◀─────────────────────────────────│
+     │                              │                                   │
+     │                              │  2. Scrape URLs (parallel)       │
+     │                              │─────────────────────────────────▶ │ Web Pages
+     │                              │◀─────────────────────────────────│
+     │                              │                                   │
+     │                              │  3. Custom Portal Processing     │
+     │                              │─────────────────────────────────▶ │ FDA/EMA/etc
+     │                              │◀─────────────────────────────────│
+     │                              │                                   │
+     │                              │  4. Rule-based Extraction        │
+     │                              │  (local processing)              │
+     │                              │                                   │
+     │  Response: {searchResults}   │                                   │
+     │◀─────────────────────────────│                                   │
+```
+
+---
+
+## 8. Key Components Deep Dive
+
+### 8.1 AzureResponsesClient (`client.py`)
+
+The client handles all LLM communication:
+
+```python
+class AzureResponsesClient:
+    """
+    Key Features:
+    - Request chaining via previous_response_id
+    - Exponential backoff with jitter
+    - Global semaphore (10 concurrent calls)
+    - Azure transient error detection
+    - File attachment support (PDF, JSON)
+    """
+    
+    Methods:
+    - send_pdf_chunk()           # Upload PDF chunk
+    - send_pdf_with_json()       # Upload PDF + JSON together
+    - send_json_only()           # Upload JSON only
+    - send_batch_extraction_request()  # Category extraction
+    - send_continuation_request()      # Handle truncated responses
+```
+
+### 8.2 Web Matching (`web_matching.py`)
+
+Two-stage matching approach:
+
+```
+Stage 1: SBERT Pre-filter (Local, Fast)
+├── ≥ 0.92 similarity → Direct match (skip LLM)
+├── 0.5 - 0.92 similarity → Candidate (send to LLM)
+└── < 0.5 similarity → No match (skip LLM)
+
+Stage 2: LLM Final Decision (Accurate, Context-aware)
+├── Only receives candidates from SBERT
+├── Full text provided (not just line numbers)
+└── Returns strict JSON with match reasons
+```
+
+### 8.3 Category Extraction (`extracts.py`)
+
+50+ category extraction functions:
+
+| Category Group | Examples |
+|----------------|----------|
+| Dosage | `dosage()`, `dosageRegimen()`, `regimen()` |
+| PK/PD | `pkpd_models_simulations()`, `quantification_range()` |
+| Manufacturing | `manufacturers_info()`, `lot_batch_numbers()` |
+| Clinical | `statistical_methods()`, `patient_population_info()` |
+| Regulatory | `approved_indication_regulatory_advice()` |
+
+---
+
+## 9. Performance & Monitoring
+
+### 9.1 Performance Report (`performance_report.py`)
+
+Tracks metrics for each pipeline run:
+
+```json
+{
+  "version": "v1",
+  "pipelineType": "pdf_native",
+  "summary": {
+    "totalPages": 100,
+    "totalLines": 5000,
+    "totalCategories": 15,
+    "totalDurationSec": 45.2,
+    "totalLlmCalls": 8
+  },
+  "stages": {
+    "stage1a_ingestion": { "durationSec": 5.1, "tokens": {...} },
+    "stage1b_understanding": { "durationSec": 3.2, "tokens": {...} },
+    "stage2_extraction": { "durationSec": 30.5, "tokens": {...} },
+    "stage3_web_matching": { "durationSec": 6.4, "tokens": {...} }
+  },
+  "costEstimation": {
+    "totalEstimatedCostUsd": 0.15,
+    "costPerPage": 0.0015
+  }
+}
+```
+
+### 9.2 Model Pricing
+
+| Model | Input (per 1M) | Output (per 1M) |
+|-------|----------------|-----------------|
+| gpt-5.6-sol | $5.00 | $30.00 |
+| gpt-5.6-luna | $1.00 | $6.00 |
+| gpt-5.4 | $2.50 | $15.00 |
+| gpt-5.4-nano | $0.15 | $0.60 |
+| gpt-4o | $2.50 | $10.00 |
+
+---
+
+## 10. Deployment
+
+### 10.1 Docker Deployment
+
+```bash
+# Build base image
+docker build -t cci-searchx:base-image . --no-cache
+
+# Run with docker-compose
+docker-compose -f compose.yml up --build -d --force-recreate
+```
+
+### 10.2 Local Development
+
+```bash
+# Create conda environment
+conda create -n cci_shadowx python=3.12
+conda activate cci_shadowx
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run with encrypted .env
+./run_local.sh
+```
+
+### 10.3 Azure VM Tags
+
+| Tag | Purpose |
+|-----|---------|
+| `ENV_ID` | Environment (dev/test/prod) |
+| `AZURE_APP_CONFIG_URL` | App Configuration URL |
+| `AZURE_KEYVAULT_URL` | Key Vault URL |
+
+---
+
+## 11. Key Integration Points
+
+### 11.1 External APIs
+
+| API | Purpose | Configuration |
+|-----|---------|---------------|
+| ai-xchange | LLM gateway | `aiXchangeBaseUrl` in LLM config |
+| PDFX | PDF processing | `PDFX_API_BASE_URL` |
+| CISX | CCI inclusion/exclusion | `CISX_API_BASE_URL` |
+| Google Search | Web search | `API_KEY`, `CX_ID` |
+
+### 11.2 Database Tables
+
+| Table | Purpose |
+|-------|---------|
+| `CCI_LLM_CONFIG` | Per-client LLM settings |
+| `OS_SEARCH_CRITERIA_DETAILS` | Search job tracking |
+| `notification` | User notifications |
+| `OS_HOSTNAME` / `OS_HOSTNAME_ATTRIBUTE` | HTML exclude rules |
+
+---
+
+## 12. Summary
+
+CCI SearchX is a comprehensive CCI extraction platform with:
+
+1. **Multiple Extraction Modes**: Web scraping, PDF analysis, Word processing
+2. **Hybrid Extraction**: Rule-based (fast, auditable) + LLM-based (accurate, context-aware)
+3. **4-Stage PDF Pipeline**: Ingestion → Understanding → Extraction → Web Matching
+4. **50+ Category Support**: Dosage, PK/PD, Manufacturing, Clinical, Regulatory
+5. **Azure-Native**: IMDS, App Configuration, Key Vault integration
+6. **Performance Tracking**: Detailed metrics, cost estimation, intermediate results
+7. **Scalable Architecture**: Async processing, parallel batching, chunked documents
+
+The architecture supports both high-throughput web scanning and deep document analysis, making it suitable for pharmaceutical regulatory compliance workflows.
