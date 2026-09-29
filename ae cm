@@ -1,94 +1,37 @@
-# tests/test_extract_participants.py
-from utils import extract as ex
+@router.get("/studies", response_model=list[StudyResponse])
+async def list_studies(
+    user: GatewayUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    List studies based on user role:
+    - admin: returns all studies (excluding deleted/archived)
+    - others: returns studies the user has access to, OR all if no access control is set up
+    """
+    # Exclude only explicitly inactive statuses
+    excluded_statuses = ("deleted", "archived")
 
-def test_participant_count_extractor_calls_candidate(monkeypatch):
-    fake_doc = type("D", (), {})()
-    fake_doc.paragraphs = [
-        type("P", (), {"text": "1 NUMBER OF PARTICIPANTS", "style": type("S", (), {"name": "Normal"})()})(),
-        type("P", (), {"text": "A total of 120 participants will be enrolled.", "style": type("S", (), {"name": "Normal"})()})(),
-        type("P", (), {"text": "2 OBJECTIVES", "style": type("S", (), {"name": "Heading 1"})()})(),
-    ]
-    monkeypatch.setattr(ex, "Document", lambda _: fake_doc)
+    if user.is_admin:
+        result = await db.execute(
+            select(Study).where(Study.status.notin_(excluded_statuses))
+        )
+    else:
+        # Check if study_access table has any records for this user
+        access_result = await db.execute(
+            select(Study)
+            .join(StudyAccess, StudyAccess.study_id == Study.uuid)
+            .where(StudyAccess.user_id == user.user_id, Study.status.notin_(excluded_statuses))
+        )
+        studies = access_result.scalars().all()
 
-    called = {}
-    def fake_candidate(text):
-        called["text"] = text
-        return {"total_participants": {"value": 120}}
+        # If no access records found, fall back to returning all active studies
+        # (handles case where access control isn't configured yet)
+        if not studies:
+            result = await db.execute(
+                select(Study).where(Study.status.notin_(excluded_statuses))
+            )
+            studies = result.scalars().all()
 
-    monkeypatch.setattr(ex, "exracted_participants_count_canditate", fake_candidate)
+        return studies
 
-    out = ex.participant_count_extractor("x.docx")
-    assert out["total_participants"]["value"] == 120
-    assert "120 participants" in called["text"]
-
-
-
-
-
-
-# tests/test_extract_mh_cm_ae.py
-from utils import extract as ex
-
-def test_mh_cm_ae_extractor_filters_exclusion(monkeypatch):
-    monkeypatch.setattr(ex, "extract_sections", lambda _: ("FULL TEXT", "EXCLUSION TEXT"))
-
-    def fake_extract_entities(text, model, entity_type_filter=None):
-        if text == "FULL TEXT" and "biomedical" in model:
-            return ["aspirin", "metformin"]
-        if text == "EXCLUSION TEXT" and "biomedical" in model:
-            return ["aspirin"]
-        if text == "FULL TEXT":
-            return ["diabetes"]
-        if text == "EXCLUSION TEXT":
-            return []
-        return []
-
-    monkeypatch.setattr(ex, "extract_entities", fake_extract_entities)
-
-    out = ex.mh_cm_ae_extractor("x.docx")
-    assert out["medications"] == ["metformin"]
-    assert out["diseases"] == ["diabetes"]
-
-
-
-
-# tests/test_api_routes.py
-from fastapi.testclient import TestClient
-import api  # your root-level api.py
-
-client = TestClient(api.app)
-
-def test_extract_title_route(monkeypatch):
-    async def fake_prepare(path):
-        return "converted.docx"
-
-    def fake_title_extractor(path):
-        assert path == "converted.docx"
-        return "An Open-label Randomized Study ..."
-
-    monkeypatch.setattr(api, "prepare_docx_path", fake_prepare)
-    monkeypatch.setattr(api, "title_extractor", fake_title_extractor)
-
-    resp = client.post("/extract/title", json={"file_path": "input.pdf"})
-    assert resp.status_code == 200
-    assert "title" in resp.json()
-    assert resp.json()["title"].startswith("An Open-label")
-
-def test_extract_age_route(monkeypatch):
-    async def fake_prepare(path):
-        return "converted.docx"
-
-    def fake_age_extractor(path):
-        return {"full_criteria_sentence": "18 to 55 years", "min_age": 18, "max_age": 55}
-
-    monkeypatch.setattr(api, "prepare_docx_path", fake_prepare)
-    monkeypatch.setattr(api, "age_extractor", fake_age_extractor)
-
-    resp = client.post("/extract/age", json={"file_path": "x.pdf"})
-    assert resp.status_code == 200
-    assert resp.json()["age"]["min_age"] == 18
-
-
-
-
-
+    return result.scalars().all()
