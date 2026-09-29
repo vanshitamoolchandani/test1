@@ -1,46 +1,41 @@
-    bullet_pattern = re.compile(r"^\s*\d+(\.\d+)*\s*[\)\.]*")  # Matches "1.", "2.", "5.1", "a)", etc.
-
-
-
-def count_bullets_in_sections(file_path):
-    inclusion_pattern = re.compile(r"^\s*\d*\.*\d*\s*Inclusion Criteria", re.IGNORECASE)
-    exclusion_pattern = re.compile(r"^\s*\d*\.*\d*\s*Exclusion Criteria", re.IGNORECASE)
-    bullet_pattern = re.compile(r"^\s*([-•*]|\d+\.)\s+")  # Matches "-", "•", "*", "1.", "2.", etc.
-
-    doc = Document(file_path)
+async def list_studies(
     
-    found_inclusion = False
-    found_exclusion = False
-    inclusion_bullet_count = 0
-    exclusion_bullet_count = 0
+    user: GatewayUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):  
+    all_studies_result = await db.execute(select(Study))
+    all_studies = all_studies_result.scalars().all()
+    print("ALL STUDIES:", [s.study_id for s in all_studies], flush=True)
+    print("STATUSES:", [(s.study_id, s.status) for s in all_studies], flush=True)
+    """
+    List studies based on user role:
+    - admin: returns all studies (excluding deleted/archived)
+    - others: returns studies the user has access to, OR all if no access control is set up
+    """
+    # Exclude only explicitly inactive statuses
+    excluded_statuses = ("deleted", "archived")
 
-    for para in doc.paragraphs:
-        text = para.text.strip()
-        if not text:
-            continue  # Skip empty paragraphs
+    if user.is_admin:
+        result = await db.execute(
+            select(Study).where(Study.status.notin_(excluded_statuses))
+        )
+    else:
+        # Check if study_access table has any records for this user
+        access_result = await db.execute(
+            select(Study)
+            .join(StudyAccess, StudyAccess.study_id == Study.uuid)
+            .where(StudyAccess.user_id == user.user_id, Study.status.notin_(excluded_statuses))
+        )
+        studies = access_result.scalars().all()
 
-        if inclusion_pattern.match(text):
-            found_inclusion = True
-            found_exclusion = False  # Reset exclusion flag
-            continue
+        # If no access records found, fall back to returning all active studies
+        # (handles case where access control isn't configured yet)
+        if not studies:
+            result = await db.execute(
+                select(Study).where(Study.status.notin_(excluded_statuses))
+            )
+            studies = result.scalars().all()
 
-        if exclusion_pattern.match(text):
-            found_exclusion = True
-            found_inclusion = False  # Stop counting inclusion bullets
-            continue
+        return studies
 
-        if found_inclusion and bullet_pattern.match(text):
-            inclusion_bullet_count += 1
-
-        if found_exclusion and bullet_pattern.match(text):
-            exclusion_bullet_count += 1
-
-    return {
-        "Inclusion Criteria Bullets": inclusion_bullet_count,
-        "Exclusion Criteria Bullets": exclusion_bullet_count
-    }
-
-# Provide the file path for extraction
-file_path = "your_file.docx"
-bullet_counts = count_bullets_in_sections(file_path)
-print(bullet_counts)
+    return result.scalars().all()
